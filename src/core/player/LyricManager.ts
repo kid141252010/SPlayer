@@ -510,6 +510,13 @@ class LyricManager {
     // 一般没有多种音译，故不对音译部分进行清洗，如果需要请另写处理函数
     ttmlContent: string,
   ): string {
+    // 无条件剔除繁体替换翻译段 <translation type="replacement" xml:lang="zh-Hant*">
+    // 使用双前瞻确保属性顺序无关，匹配所有繁体变体（zh-Hant / zh-Hant-HK / zh-Hant-TW 等）
+    ttmlContent = ttmlContent.replace(
+      /<translation(?=[^>]*type="replacement")(?=[^>]*xml:lang="zh-Hant[^"]*")[^>]*>[\s\S]*?<\/translation>/g,
+      "",
+    );
+
     const lang_counter = (ttml_text: string) => {
       // 使用正则匹配所有 xml:lang="xx-XX" 格式的字符串
       const langRegex = /(?<=<(span|translation)[^<>]+)xml:lang="([^"]+)"/g;
