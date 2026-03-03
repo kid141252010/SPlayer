@@ -220,10 +220,11 @@ export class MusicMetadataService {
    * @param lyricDirs 歌词目录列表
    * @param id 歌曲ID
    * @param songName 本地歌曲名称
+   * @param artists 歌曲对应的歌手数组
    * @returns 歌词内容
    */
-  async readLocalLyric(lyricDirs: string[], id: number, songName?: string): Promise<{ lrc: string; ttml: string; matchedNcmId?: number }> {
-    return readLocalLyricImpl(lyricDirs, id, songName);
+  async readLocalLyric(lyricDirs: string[], id: number, songName?: string, artists?: string[]): Promise<{ lrc: string; ttml: string; matchedNcmId?: number }> {
+    return readLocalLyricImpl(lyricDirs, id, songName, artists);
   }
 
   /**

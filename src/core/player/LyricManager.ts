@@ -811,9 +811,11 @@ class LyricManager {
   /**
    * 检测本地歌词覆盖
    * @param id 歌曲 ID
+   * @param songName 歌曲名称
+   * @param artists 歌曲对应的歌手数组
    * @returns 歌词数据和元数据
    */
-  private async fetchLocalOverrideLyric(id: number, songName?: string): Promise<LyricFetchResult & { matchedNcmId?: number }> {
+  private async fetchLocalOverrideLyric(id: number, songName?: string, artists?: string[]): Promise<LyricFetchResult & { matchedNcmId?: number }> {
     const settingStore = useSettingStore();
     const { localLyricPath } = settingStore;
     const defaultResult: LyricFetchResult & { matchedNcmId?: number } = {
@@ -832,6 +834,7 @@ class LyricManager {
         lyricDirs,
         id,
         songName,
+        artists,
       );
 
       // 安全解析 LRC
@@ -1220,9 +1223,12 @@ class LyricManager {
           }
         }
 
+        // 解析歌手数组
+        const artistNames = this.extractArtistNames(song);
+
         // 检查全局覆盖
         const checkId = savedNcmId ?? (typeof song.id === "number" ? song.id : 0);
-        const overrideResult = await this.fetchLocalOverrideLyric(checkId, song.name);
+        const overrideResult = await this.fetchLocalOverrideLyric(checkId, song.name, artistNames);
 
         if (!isEmpty(overrideResult.data.lrcData) || !isEmpty(overrideResult.data.yrcData)) {
           // 对齐
