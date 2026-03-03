@@ -77,11 +77,27 @@ class TtmlIdMappingCache {
 
     /**
      * 判断两个字符串是否包含匹配（忽略大小写和空格）
+     * 增加长度差异判断，防止'Track 1'匹配到'Track 10'
      */
     private isContainsMatch(a: string, b: string): boolean {
         const al = a.trim().toLowerCase();
         const bl = b.trim().toLowerCase();
-        return al.includes(bl) || bl.includes(al);
+        if (!al || !bl) return false;
+        if (al === bl) return true;
+
+        // 对过短的字符串（小于3），必须精确匹配
+        if (al.length < 3 || bl.length < 3) return false;
+
+        // 如果一个是另一个的包含子串，但长度过于相近，可能意味着只是版本号或 track number 不同，应当被拒绝
+        const diff = Math.abs(al.length - bl.length);
+        const minLen = Math.min(al.length, bl.length);
+
+        // 例如 track 1 (7) 和 track 10 (8)，diff = 1，minLen * 0.3 = 2.1，拒绝包含匹配
+        if (diff > minLen * 0.3) {
+            return al.includes(bl) || bl.includes(al);
+        }
+
+        return false;
     }
 
     /**
@@ -89,7 +105,7 @@ class TtmlIdMappingCache {
      * 将底层所有的元素转化为 Flat Array 进行灵活过滤
      */
     getBySongAndArtist(songName: string, queryArtists?: string[]): TtmlIdEntry | undefined {
-        if (!songName) return undefined;
+        if (!songName || !songName.trim()) return undefined;
         const targetSongName = songName.trim().toLowerCase();
         const targetArtists = (queryArtists || []).map((a) => a.trim().toLowerCase()).filter(Boolean);
 
