@@ -74,19 +74,19 @@ export const formatSongsList = (data: any[]): SongType[] => {
         typeof item.album === "string"
           ? item.album
           : {
-              id: (item.album || item.al)?.id,
-              name: (item.album || item.al)?.name,
-              cover: (item.album || item.al)?.picUrl,
-            },
+            id: (item.album || item.al)?.id,
+            name: (item.album || item.al)?.name,
+            cover: (item.album || item.al)?.picUrl,
+          },
       alia: isArray(item.alia || item.alias || item.transNames || item.tns)
         ? item.alia?.[0] || item.alias?.[0] || item.transNames?.[0] || item.tns?.[0]
         : item.alia,
       dj: item.dj
         ? {
-            id: item.mainTrackId || item.id,
-            name: item.dj?.brand,
-            creator: item.dj?.nickname,
-          }
+          id: item.mainTrackId || item.id,
+          name: item.dj?.brand,
+          creator: item.dj?.nickname,
+        }
         : undefined,
       ...getCoverUrl(item),
       duration: Number(item.duration || item.dt || 0),
@@ -204,13 +204,13 @@ export const formatCommentList = (data: any[]): CommentType[] => {
     beReplied:
       item.beReplied?.length > 0
         ? {
-            content: item.beReplied[0]?.content,
-            user: {
-              id: item.beReplied[0]?.user.userId,
-              name: item.beReplied[0]?.user.nickname,
-              avatarUrl: item.beReplied[0]?.user.avatarUrl,
-            },
-          }
+          content: item.beReplied[0]?.content,
+          user: {
+            id: item.beReplied[0]?.user.userId,
+            name: item.beReplied[0]?.user.nickname,
+            avatarUrl: item.beReplied[0]?.user.avatarUrl,
+          },
+        }
         : undefined,
     time: item.time,
     likedCount: item.likedCount,
@@ -226,9 +226,9 @@ export const formatCommentList = (data: any[]): CommentType[] => {
     },
     ip: item?.ip
       ? {
-          ip: item.ip,
-          location: item.location,
-        }
+        ip: item.ip,
+        location: item.location,
+      }
       : undefined,
   }));
 };
@@ -288,7 +288,8 @@ const getCoverSizeUrl = (url: string, size: number | null = null) => {
         : `?param=${size}`
       : "";
     const imageUrl = url?.replace(/^http:/, "https:");
-    if (imageUrl.endsWith(".jpg")) {
+    // 支持常见图片格式的尺寸参数追加
+    if (/\.(jpg|jpeg|png|webp|gif)$/i.test(imageUrl)) {
       return imageUrl + sizeUrl;
     }
     if (imageUrl.endsWith("&")) {

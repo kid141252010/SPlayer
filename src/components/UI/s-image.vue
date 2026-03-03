@@ -86,6 +86,10 @@ const lastShowState = ref<boolean | null>(null);
 // 加载竞态 token，防止旧图片回调覆盖新状态
 const loadToken = ref<number>(0);
 const currentToken = ref<number>(0);
+// 重试相关
+const MAX_RETRY = 2;
+const retryCount = ref<number>(0);
+let retryTimer: ReturnType<typeof setTimeout> | null = null;
 
 // 是否可视
 const isCanLook = useElementVisibility(imgContainer);
@@ -104,9 +108,24 @@ const imageError = (e: Event) => {
   // 竞态保护
   if (currentToken.value !== loadToken.value) return;
   isLoaded.value = false;
-  // 避免默认图也反复触发导致死循环
-  if (imgSrc.value !== props.defaultSrc) {
-    imgSrc.value = props.defaultSrc;
+  // 重试机制：在回退默认图前先重试
+  if (retryCount.value < MAX_RETRY && props.src && imgSrc.value !== props.defaultSrc) {
+    retryCount.value++;
+    const delay = retryCount.value * 1000; // 递增延迟：1s, 2s
+    const tokenAtRetry = currentToken.value;
+    retryTimer = setTimeout(() => {
+      // 确保重试时仍是同一张图片
+      if (currentToken.value === tokenAtRetry) {
+        // 通过追加时间戳绕过浏览器缓存的失败结果
+        const separator = props.src!.includes("?") ? "&" : "?";
+        imgSrc.value = `${props.src}${separator}_t=${Date.now()}`;
+      }
+    }, delay);
+  } else {
+    // 超过重试次数，回退到默认图片
+    if (imgSrc.value !== props.defaultSrc) {
+      imgSrc.value = props.defaultSrc;
+    }
   }
   emit("error", e);
 };
@@ -141,6 +160,12 @@ watch(
   () => props.src,
   (val) => {
     isLoaded.value = false;
+    // 重置重试计数
+    retryCount.value = 0;
+    if (retryTimer) {
+      clearTimeout(retryTimer);
+      retryTimer = null;
+    }
     // 不同值时才进行赋值，减少重绘
     if (props.observeVisibility) {
       if (isCanLook.value) {
@@ -149,9 +174,15 @@ watch(
           currentToken.value = loadToken.value;
           imgSrc.value = val;
         }
+      } else if (props.releaseOnHide) {
+        if (imgSrc.value !== undefined) imgSrc.value = undefined;
       } else {
-        if (props.releaseOnHide) {
-          if (imgSrc.value !== undefined) imgSrc.value = undefined;
+        // 非 releaseOnHide 模式下，即使不可见也设置 imgSrc
+        // 避免在 VirtualScroll 中 IntersectionObserver 还未回调时永远加载不出图片
+        if (imgSrc.value !== val) {
+          loadToken.value += 1;
+          currentToken.value = loadToken.value;
+          imgSrc.value = val;
         }
       }
     } else {
@@ -166,6 +197,10 @@ watch(
 );
 
 onUnmounted(() => {
+  if (retryTimer) {
+    clearTimeout(retryTimer);
+    retryTimer = null;
+  }
   try {
     if (imgRef.value) imgRef.value.src = "";
   } catch {
