@@ -314,44 +314,77 @@ export async function scanTtmlIdMapping(lyricDirs: string[]): Promise<number> {
 // ──────────────────────────────────────────────
 
 /**
- * 读取本地目录中的歌词（通过 ID 查找）
+ * 读取本地目录中的歌词（通过 ID 或歌名查找）
+ * 0. 优先查询歌名缓存
  * 1. 优先查询 ncmMusicId 缓存（命中则读取文件，验证 mtime）
  * 2. 回退到文件名模式匹配（`{id}.ttml` / `{id}.lrc`）
  * 3. 若仍未找到 TTML，后台异步触发 scanTtmlIdMapping
  *
  * @param lyricDirs 歌词目录列表
  * @param id 歌曲 ID（NCM ID）
- * @returns { lrc, ttml }
+ * @param songName 歌曲名称
+ * @returns { lrc, ttml, matchedNcmId }
  */
 export async function readLocalLyricImpl(
     lyricDirs: string[],
     id: number,
-): Promise<{ lrc: string; ttml: string }> {
-    const result = { lrc: "", ttml: "" };
+    songName?: string,
+): Promise<{ lrc: string; ttml: string; matchedNcmId?: number }> {
+    const result: { lrc: string; ttml: string; matchedNcmId?: number } = { lrc: "", ttml: "" };
     const cache = await getTtmlIdCache();
     let isCacheDirty = false;
 
+    // ── 步骤 0：查询歌名缓存 ──
+    let cachedByName: ReturnType<typeof cache.getByName> | undefined;
+    if (songName) {
+        const lowerName = songName.trim().toLowerCase();
+        cachedByName = cache.getByName(lowerName);
+        if (cachedByName) {
+            const filePath = cachedByName.filePath;
+            try {
+                const fileStat = await stat(filePath);
+                if (fileStat.mtimeMs === cachedByName.mtime) {
+                    result.ttml = await readFile(filePath, "utf-8");
+                    result.matchedNcmId = cachedByName.ncmIds.length > 0 ? cachedByName.ncmIds[0] : undefined;
+                    ipcLog.info(`[readLocalLyric] 歌名缓存命中 TTML: ${filePath}`);
+                } else {
+                    await cache.delete(filePath, { autoSave: false });
+                    isCacheDirty = true;
+                    // @ts-ignore
+                    cachedByName = undefined;
+                }
+            } catch (e) {
+                await cache.delete(filePath, { autoSave: false });
+                isCacheDirty = true;
+                // @ts-ignore
+                cachedByName = undefined;
+            }
+        }
+    }
+
     // ── 步骤 1：查询 ncmMusicId 缓存 ──
-    const cached = cache.getByIds([id]);
-    if (cached) {
-        try {
-            const fileStat = await stat(cached.filePath);
-            if (fileStat.mtimeMs === cached.mtime) {
-                // 文件未变更，直接读取
-                result.ttml = await readFile(cached.filePath, "utf-8");
-                ipcLog.info(`[readLocalLyric] 从缓存中找到 TTML: ${cached.filePath}`);
-            } else {
-                // 文件已更新，删除旧缓存
+    if (!result.ttml) {
+        const cached = cache.getByIds([id]);
+        if (cached) {
+            try {
+                const fileStat = await stat(cached.filePath);
+                if (fileStat.mtimeMs === cached.mtime) {
+                    // 文件未变更，直接读取
+                    result.ttml = await readFile(cached.filePath, "utf-8");
+                    ipcLog.info(`[readLocalLyric] 从缓存中找到 TTML: ${cached.filePath}`);
+                } else {
+                    // 文件已更新，删除旧缓存
+                    await cache.delete(cached.filePath, { autoSave: false });
+                    isCacheDirty = true;
+                }
+            } catch (e) {
+                ipcLog.warn(
+                    `[readLocalLyric] 访问缓存的 TTML 文件失败，删除缓存: ${cached.filePath}`,
+                    e,
+                );
                 await cache.delete(cached.filePath, { autoSave: false });
                 isCacheDirty = true;
             }
-        } catch (e) {
-            ipcLog.warn(
-                `[readLocalLyric] 访问缓存的 TTML 文件失败，删除缓存: ${cached.filePath}`,
-                e,
-            );
-            await cache.delete(cached.filePath, { autoSave: false });
-            isCacheDirty = true;
         }
     }
 
@@ -445,3 +478,4 @@ export async function matchLocalTtmlByName(
 
     return null;
 }
+
