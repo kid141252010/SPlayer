@@ -855,14 +855,14 @@ class LyricManager {
     );
 
     const lang_counter = (ttml_text: string) => {
-      // 使用正则匹配所有 xml:lang="xx-XX" 格式的字符串
-      const langRegex = /(?<=<(span|translation)[^<>]+)xml:lang="([^"]+)"/g;
+      // 提取 translation 的语言，不对 span（原词/音译）的语言进行提取
+      const langRegex = /<translation[^>]+xml:lang="([^"]+)"/g;
       const matches = ttml_text.matchAll(langRegex);
 
       // 提取匹配结果并去重
       const langSet = new Set<string>();
       for (const match of matches) {
-        if (match[2]) langSet.add(match[2]);
+        if (match[1]) langSet.add(match[1]);
       }
 
       return Array.from(langSet);
@@ -899,13 +899,13 @@ class LyricManager {
 
       /**
        * 替换逻辑回调函数
-       * @param match 完整匹配到的标签字符串 (例如 <code><span ...>...<\/span></code>)
-       * @param lang 正则中第一个捕获组匹配到的语言代码 (例如 "ja-JP")
+       * @param match 完整匹配到的标签字符串 (例如 <code><translation ...>...<\/translation></code>)
+       * @param lang 正则中第一个捕获组匹配到的语言代码 (例如 "zh-Hans")
        */
       const replacer = (match: string, lang: string) => (lang === major_lang ? match : "");
       const translationRegex = /<translation[^>]+xml:lang="([^"]+)"[^>]*>[\s\S]*?<\/translation>/g;
-      const spanRegex = /<span[^>]+xml:lang="([^" ]+)"[^>]*>[\s\S]*?<\/span>/g;
-      return ttml_text.replace(translationRegex, replacer).replace(spanRegex, replacer);
+      // 不清理 span，保留原词和音译的内容，由 blockPinyinLyric 处理 "拒绝胎教"
+      return ttml_text.replace(translationRegex, replacer);
     };
 
     const context_lang = lang_counter(ttmlContent);
