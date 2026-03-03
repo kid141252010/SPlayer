@@ -45,6 +45,7 @@ declare module 'vue' {
     ListComment: typeof import('./src/components/List/ListComment.vue')['default']
     ListDetail: typeof import('./src/components/List/ListDetail.vue')['default']
     LocalLyricDirectories: typeof import('./src/components/Setting/components/LocalLyricDirectories.vue')['default']
+    LocalMatch: typeof import('./src/components/Modal/LocalMatch.vue')['default']
     LocalMusicDirectory: typeof import('./src/components/Modal/Setting/LocalMusicDirectory.vue')['default']
     Login: typeof import('./src/components/Modal/Login/Login.vue')['default']
     LoginCookie: typeof import('./src/components/Modal/Login/LoginCookie.vue')['default']
