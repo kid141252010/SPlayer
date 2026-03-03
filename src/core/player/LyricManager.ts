@@ -1062,6 +1062,27 @@ class LyricManager {
     // 应用括号替换
     lyricData = applyBracketReplacement(lyricData);
     lyricData = applyProfanityUncensor(lyricData, settingStore.uncensorMaskedProfanity);
+    // 拒绝胎教 Mode: 屏蔽汉语拼音音译
+    if (settingStore.blockPinyinLyric) {
+      const stripPinyin = (lines: LyricLine[]) => {
+        for (const line of lines) {
+          // 检测 romanLyric 是否为拼音（纯 ASCII 字母、声调符号和空格）
+          if (line.romanLyric && /^[\sa-zA-Zāáǎàēéěèīíǐìōóǒòūúǔùǖǘǚǜü]+$/.test(line.romanLyric)) {
+            line.romanLyric = "";
+          }
+          // 逐字级别
+          if (line.words) {
+            for (const w of line.words) {
+              if (w.romanWord && /^[\sa-zA-Zāáǎàēéěèīíǐìōóǒòūúǔùǖǘǚǜü]+$/.test(w.romanWord)) {
+                w.romanWord = "";
+              }
+            }
+          }
+        }
+      };
+      if (lyricData.lrcData) stripPinyin(lyricData.lrcData);
+      if (lyricData.yrcData) stripPinyin(lyricData.yrcData);
+    }
     // 规范化时间
     this.normalizeLyricLines(lyricData.yrcData);
     this.normalizeLyricLines(lyricData.lrcData);

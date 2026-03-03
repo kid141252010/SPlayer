@@ -464,6 +464,8 @@ export interface SettingState {
   disableAiAudio: boolean;
   /** Fuck DJ: 开启后自动跳过 DJ 歌曲 */
   disableDjMode: boolean;
+  /** 拒绝胎教: 开启后屏蔽 TTML 歌词中的汉语拼音音译 */
+  blockPinyinLyric: boolean;
   /** 启用自动混音 */
   enableAutomix: boolean;
   /** 自动混音最大分析时间 (秒) */
@@ -738,6 +740,7 @@ export const useSettingStore = defineStore("setting", {
     streamingEnabled: false,
     disableAiAudio: false,
     disableDjMode: false,
+    blockPinyinLyric: false,
     enableAutomix: false,
     automixMaxAnalyzeTime: 60,
     enableGlobalErrorDialog: true,
