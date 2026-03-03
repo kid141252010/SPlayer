@@ -517,24 +517,6 @@ class LyricManager {
       }
     }
 
-    // 2. 尝试通过歌名在全局歌词文件夹中急速匹配 TTML
-    const { localLyricPath } = settingStore;
-    if (isElectron && localLyricPath && localLyricPath.length > 0 && window.electron?.ipcRenderer) {
-      try {
-        const lyricDirs = Array.isArray(localLyricPath) ? localLyricPath.map((p) => String(p)) : [];
-        const ttmlNcmId = await window.electron.ipcRenderer.invoke(
-          "match-local-ttml-by-name",
-          lyricDirs,
-          songName,
-        );
-        if (ttmlNcmId) {
-          console.log(`[MetadataMatch] 全局 TTML 文件夹歌名急速命中: ${songName} -> NCM ID ${ttmlNcmId}`);
-          return ttmlNcmId;
-        }
-      } catch (err) {
-        console.warn(`[MetadataMatch] 全局 TTML 查找失败: ${err}`);
-      }
-    }
 
     // 3. 检查全局 CacheDB 缓存
     const cacheKey = `ncm-match:${song.path || song.name}`;
@@ -831,10 +813,10 @@ class LyricManager {
    * @param id 歌曲 ID
    * @returns 歌词数据和元数据
    */
-  private async fetchLocalOverrideLyric(id: number): Promise<LyricFetchResult> {
+  private async fetchLocalOverrideLyric(id: number, songName?: string): Promise<LyricFetchResult & { matchedNcmId?: number }> {
     const settingStore = useSettingStore();
     const { localLyricPath } = settingStore;
-    const defaultResult: LyricFetchResult = {
+    const defaultResult: LyricFetchResult & { matchedNcmId?: number } = {
       data: { lrcData: [], yrcData: [] },
       meta: { usingTTMLLyric: false, usingQRCLyric: false }, // 覆盖默认没有 QRC
     };
@@ -845,10 +827,11 @@ class LyricManager {
     try {
       const lyricDirs = Array.isArray(localLyricPath) ? localLyricPath.map((p) => String(p)) : [];
       // 读取本地歌词
-      const { lrc, ttml } = await window.electron.ipcRenderer.invoke(
+      const { lrc, ttml, matchedNcmId } = await window.electron.ipcRenderer.invoke(
         "read-local-lyric",
         lyricDirs,
         id,
+        songName,
       );
 
       // 安全解析 LRC
@@ -886,12 +869,14 @@ class LyricManager {
         return {
           data: { lrcData: [], yrcData: lrcLines },
           meta: { usingTTMLLyric: false, usingQRCLyric: false },
+          matchedNcmId,
         };
       }
 
       return {
         data: { lrcData: lrcLines, yrcData: ttmlLines },
         meta: { usingTTMLLyric: ttmlLines.length > 0, usingQRCLyric: false },
+        matchedNcmId,
       };
     } catch (error) {
       console.error("读取本地歌词失败:", error);
@@ -1208,14 +1193,50 @@ class LyricManager {
       if (isStreaming) {
         fetchResult = await this.fetchStreamingLyric(song);
       } else {
-        // 检查本地覆盖
-        const overrideResult = await this.fetchLocalOverrideLyric(song.id);
+        // 先尝试获取可能的 NCM ID（缓存或本地索引）以支持通过全局目录覆盖查询
+        let savedNcmId: number | undefined;
+        let dirPath = "";
+        let fileName = "";
+        if (isLocal && isElectron && window.electron?.ipcRenderer) {
+          const lastSlashIndex = Math.max(song.path!.lastIndexOf("/"), song.path!.lastIndexOf("\\"));
+          dirPath = lastSlashIndex >= 0 ? song.path!.substring(0, lastSlashIndex) : "";
+          fileName = lastSlashIndex >= 0 ? song.path!.substring(lastSlashIndex + 1) : song.path!;
+          try {
+            const localIndex = await window.electron.ipcRenderer.invoke("get-local-match-index", dirPath);
+            if (localIndex && fileName in localIndex && localIndex[fileName] !== null) {
+              savedNcmId = localIndex[fileName];
+            }
+          } catch { }
+          if (!savedNcmId) {
+            try {
+              const cacheManager = useCacheManager();
+              const cached = await cacheManager.get("lyrics", `ncm-match:${song.path || song.name}`);
+              if (cached.success && cached.data) {
+                const decoder = new TextDecoder();
+                const parsed = JSON.parse(decoder.decode(cached.data));
+                if (parsed && typeof parsed.ncmId === "number") savedNcmId = parsed.ncmId;
+              }
+            } catch { }
+          }
+        }
+
+        // 检查全局覆盖
+        const checkId = savedNcmId ?? (typeof song.id === "number" ? song.id : 0);
+        const overrideResult = await this.fetchLocalOverrideLyric(checkId, song.name);
+
         if (!isEmpty(overrideResult.data.lrcData) || !isEmpty(overrideResult.data.yrcData)) {
           // 对齐
           overrideResult.data = this.alignLocalLyrics(overrideResult.data);
+
+          if (overrideResult.matchedNcmId) {
+            this.saveMatchCache(`ncm-match:${song.path || song.name}`, overrideResult.matchedNcmId);
+            if (dirPath && fileName && window.electron?.ipcRenderer) {
+              window.electron.ipcRenderer.invoke("save-local-match-index", dirPath, fileName, overrideResult.matchedNcmId).catch(() => { });
+            }
+          }
           fetchResult = overrideResult;
         } else if (song.path) {
-          // 本地文件
+          // 本地文件附带的歌词文件夹
           fetchResult = await this.fetchLocalLyric(song);
         } else {
           // 在线获取

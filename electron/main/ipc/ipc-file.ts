@@ -258,8 +258,8 @@ const initFileIpc = (): void => {
   });
 
   // 读取本地歌词
-  ipcMain.handle("read-local-lyric", async (_, lyricDirs: string[], id: number) => {
-    return musicMetadataService.readLocalLyric(lyricDirs, id);
+  ipcMain.handle("read-local-lyric", async (_, lyricDirs: string[], id: number, songName?: string) => {
+    return musicMetadataService.readLocalLyric(lyricDirs, id, songName);
   });
 
   // 手动扫描本地 TTML 歌词目录，建立 ncmMusicId 映射缓存
