@@ -521,6 +521,16 @@ export const usePlaySettings = (): SettingConfig => {
             }),
           },
           {
+            key: "blockPinyinLyric",
+            label: "拒绝胎教 Mode",
+            type: "switch",
+            description: "屏蔽 TTML 歌词中的汉语拼音音译标注",
+            value: computed({
+              get: () => settingStore.blockPinyinLyric,
+              set: (v) => (settingStore.blockPinyinLyric = v),
+            }),
+          },
+          {
             key: "audioEngine",
             label: "音频处理引擎",
             type: "select",
