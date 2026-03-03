@@ -61,8 +61,7 @@ export const searchResult = (
   type: SearchTypes = SearchTypes.All,
 ) => {
   return request({
-    // /search 支持搜索无版权（变灰）的歌曲，而 /cloudsearch 在某些情况下会被隐藏
-    url: "/search",
+    url: "/cloudsearch",
     params: {
       keywords,
       limit,
