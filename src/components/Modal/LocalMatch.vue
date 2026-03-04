@@ -7,7 +7,19 @@
           disabled
         />
       </n-form-item>
-      <n-form-item path="asid" label="匹配的网易云 ID">
+      <n-form-item label="当前绑定的网易云 ID">
+        <n-input
+          :value="currentMatchedId ? String(currentMatchedId) : '暂无绑定'"
+          disabled
+          placeholder="未匹配到有效的网易云歌曲"
+          :style="{ textAlign: 'center' }"
+        >
+          <template #prefix v-if="currentMatchedId">
+            <SvgIcon name="Cloud" />
+          </template>
+        </n-input>
+      </n-form-item>
+      <n-form-item path="asid" label="重新匹配网易云 ID">
         <n-flex :size="12" :wrap="false" class="input">
           <n-input-number
             v-model:value="matchFormData.asid"
@@ -68,9 +80,28 @@ const displayPath = computed(() => {
 const isSongNormal = ref<boolean>(false);
 const matchSongData = ref<SongType | null>(null);
 
+// 当前绑定状态
+const currentMatchedId = ref<number | null>(null);
+
 // 表单数据
 const matchFormData = ref<MatchFormType>({ asid: null });
 const matchFormRules: FormRules = { asid: { ...numberRule, message: "请输入网易云歌曲 ID" } };
+
+onMounted(async () => {
+  try {
+    const cacheManager = useCacheManager();
+    const result = await cacheManager.get("lyrics", `ncm-match:${props.song.path || props.song.name}`);
+    if (result.success && result.data) {
+      const decoder = new TextDecoder();
+      const parsed = JSON.parse(decoder.decode(result.data));
+      if (parsed.ncmId) {
+        currentMatchedId.value = parsed.ncmId;
+      }
+    }
+  } catch (e) {
+    console.warn("读取本地歌曲绑定状态失败:", e);
+  }
+});
 
 // 验证歌曲 ID
 const testSongId = debounce(
