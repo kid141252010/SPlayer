@@ -844,9 +844,17 @@ class LyricManager {
    */
   // 当支持 i18n 之后，需要对其中的部分函数进行修改，使其优选逻辑能够根据用户界面语言变化
   private cleanTTMLTranslations(
-    // 一般没有多种音译，故不对音译部分进行清洗，如果需要请另写处理函数
     ttmlContent: string,
   ): string {
+    const settingStore = useSettingStore();
+
+    // 拒绝胎教 Mode: 仅剔除声明为 zh-Hans-Latn 的汉语拼音音译，保留日语音译及无声明语言的音译
+    if (settingStore.blockPinyinLyric) {
+      ttmlContent = ttmlContent.replace(
+        /<transliteration(?=[^>]*xml:lang="zh-Hans-Latn")[^>]*>[\s\S]*?<\/transliteration>/g,
+        "",
+      );
+    }
     // 无条件剔除繁体替换翻译段 <translation type="replacement" xml:lang="zh-Hant*">
     // 使用双前瞻确保属性顺序无关，匹配所有繁体变体（zh-Hant / zh-Hant-HK / zh-Hant-TW 等）
     ttmlContent = ttmlContent.replace(
@@ -904,7 +912,7 @@ class LyricManager {
        */
       const replacer = (match: string, lang: string) => (lang === major_lang ? match : "");
       const translationRegex = /<translation[^>]+xml:lang="([^"]+)"[^>]*>[\s\S]*?<\/translation>/g;
-      // 不清理 span，保留原词和音译的内容，由 blockPinyinLyric 处理 "拒绝胎教"
+      // 不清理 span，保留原词和音译的内容（汉语拼音音译已在上方 blockPinyinLyric 中按 xml:lang 声明剔除）
       return ttml_text.replace(translationRegex, replacer);
     };
 
@@ -1167,27 +1175,7 @@ class LyricManager {
     // 应用括号替换
     lyricData = applyBracketReplacement(lyricData);
     lyricData = applyProfanityUncensor(lyricData, settingStore.uncensorMaskedProfanity);
-    // 拒绝胎教 Mode: 屏蔽汉语拼音音译
-    if (settingStore.blockPinyinLyric) {
-      const stripPinyin = (lines: LyricLine[]) => {
-        for (const line of lines) {
-          // 检测 romanLyric 是否为拼音（纯 ASCII 字母、声调符号和空格）
-          if (line.romanLyric && /^[\sa-zA-Zāáǎàēéěèīíǐìōóǒòūúǔùǖǘǚǜü]+$/.test(line.romanLyric)) {
-            line.romanLyric = "";
-          }
-          // 逐字级别
-          if (line.words) {
-            for (const w of line.words) {
-              if (w.romanWord && /^[\sa-zA-Zāáǎàēéěèīíǐìōóǒòūúǔùǖǘǚǜü]+$/.test(w.romanWord)) {
-                w.romanWord = "";
-              }
-            }
-          }
-        }
-      };
-      if (lyricData.lrcData) stripPinyin(lyricData.lrcData);
-      if (lyricData.yrcData) stripPinyin(lyricData.yrcData);
-    }
+    // 拒绝胎教 Mode: 汉语拼音音译已在 cleanTTMLTranslations 中基于 xml:lang 声明精确剔除
     // 规范化时间
     this.normalizeLyricLines(lyricData.yrcData);
     this.normalizeLyricLines(lyricData.lrcData);
