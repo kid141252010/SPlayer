@@ -746,7 +746,10 @@ class LyricManager {
     const statusStore = useStatusStore();
     const settingStore = useSettingStore();
     // 若非本次
-    if (this.activeLyricReq !== req) return;
+    if (this.activeLyricReq !== req) {
+      console.log(`歌词请求已取消: req=${req}, active=${this.activeLyricReq}`);
+      return;
+    }
     // 应用括号替换
     lyricData = applyBracketReplacement(lyricData);
     lyricData = applyProfanityUncensor(lyricData, settingStore.uncensorMaskedProfanity);
