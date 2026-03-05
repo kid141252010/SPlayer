@@ -142,14 +142,14 @@ export interface SettingState {
   proxyPort: number;
   /** 歌曲音质 */
   songLevel:
-    | "standard"
-    | "higher"
-    | "exhigh"
-    | "lossless"
-    | "hires"
-    | "jyeffect"
-    | "sky"
-    | "jymaster";
+  | "standard"
+  | "higher"
+  | "exhigh"
+  | "lossless"
+  | "hires"
+  | "jyeffect"
+  | "sky"
+  | "jymaster";
   /** 播放设备 */
   playDevice: "default" | string;
   /** 音频引擎: element (原生) 或 ffmpeg */
@@ -231,6 +231,10 @@ export interface SettingState {
   lyricPriority: LyricPriority;
   /** 本地歌曲使用 QM 歌词匹配 */
   localLyricQQMusicMatch: boolean;
+  /** 本地歌曲使用网易云元数据匹配歌词 */
+  localLyricNCMMatch: boolean;
+  /** 本地歌曲网易云匹配严格度 */
+  localLyricMatchLevel: "strict" | "normal" | "loose";
   /** AMLL DB 服务地址 */
   amllDbServer: string;
   /** 菜单显示封面 */
@@ -460,6 +464,8 @@ export interface SettingState {
   disableAiAudio: boolean;
   /** Fuck DJ: 开启后自动跳过 DJ 歌曲 */
   disableDjMode: boolean;
+  /** 拒绝胎教: 开启后屏蔽 TTML 歌词中的汉语拼音音译 */
+  blockPinyinLyric: boolean;
   /** 启用自动混音 */
   enableAutomix: boolean;
   /** 自动混音最大分析时间 (秒) */
@@ -558,6 +564,8 @@ export const useSettingStore = defineStore("setting", {
     enableQQMusicLyric: false,
     lyricPriority: "auto",
     localLyricQQMusicMatch: false,
+    localLyricNCMMatch: false,
+    localLyricMatchLevel: "normal",
     amllDbServer: defaultAMLLDbServer,
     showWordLyrics: true,
     showTran: true,
@@ -732,6 +740,7 @@ export const useSettingStore = defineStore("setting", {
     streamingEnabled: false,
     disableAiAudio: false,
     disableDjMode: false,
+    blockPinyinLyric: false,
     enableAutomix: false,
     automixMaxAnalyzeTime: 60,
     enableGlobalErrorDialog: true,
@@ -803,12 +812,11 @@ export const useSettingStore = defineStore("setting", {
       }
       window.$message.info(
         `已切换至
-        ${
-          this.themeMode === "auto"
-            ? "跟随系统"
-            : this.themeMode === "light"
-              ? "浅色模式"
-              : "深色模式"
+        ${this.themeMode === "auto"
+          ? "跟随系统"
+          : this.themeMode === "light"
+            ? "浅色模式"
+            : "深色模式"
         }`,
         {
           showIcon: false,

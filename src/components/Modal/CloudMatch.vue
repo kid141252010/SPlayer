@@ -130,4 +130,7 @@ const correctSong = debounce(
 .input {
   width: 100%;
 }
+.menu {
+  margin-top: 20px;
+}
 </style>
