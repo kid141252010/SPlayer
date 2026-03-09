@@ -671,6 +671,7 @@ class PlayerController {
     // 加载状态
     audioManager.addEventListener("loadstart", () => {
       statusStore.playLoading = true;
+      statusStore.currentAudioChannels = undefined;
     });
 
     // 加载完成
