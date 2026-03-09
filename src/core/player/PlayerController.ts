@@ -680,7 +680,9 @@ class PlayerController {
       // 结束加载
       statusStore.playLoading = false;
       // 更新声道数信息
-      statusStore.currentAudioChannels = audioManager.getChannels();
+      const channels = audioManager.getChannels();
+      console.log(`[PlayerController] canplay 事件触发，声道数: ${channels}`);
+      statusStore.currentAudioChannels = channels;
       // 恢复 EQ
       if (isElectron && statusStore.eqEnabled) {
         const bands = statusStore.eqBands;
