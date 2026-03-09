@@ -18,6 +18,9 @@ export class AudioElementPlayer extends BaseAudioPlayer {
   /** MediaElementAudioSourceNode 用于连接 Web Audio API */
   private sourceNode: MediaElementAudioSourceNode | null = null;
 
+  /** 当前音频声道数 */
+  private _channels: number = 2;
+
   /** Seek 锁，用于在 seek 过程中返回稳定的 currentTime */
   private isInternalSeeking = false;
   /** 目标时间缓存，用于在 seek 过程中返回稳定的 currentTime */
@@ -44,23 +47,10 @@ export class AudioElementPlayer extends BaseAudioPlayer {
 
   /**
    * 当音频图谱初始化完成时调用
-   * 创建 MediaElementAudioSourceNode 并连接到输入节点
+   * 创建 MediaElementSourceNode 并连接到输入节点
    */
   protected onGraphInitialized(): void {
-    if (!this.audioCtx || !this.inputNode) return;
-
-    try {
-      if (!this.sourceNode) {
-        this.sourceNode = this.audioCtx.createMediaElementSource(this.audioElement);
-      } else {
-        this.sourceNode.disconnect();
-      }
-
-      // 连接: Source -> Input
-      this.sourceNode.connect(this.inputNode);
-    } catch (error) {
-      console.error("[AudioElementPlayer] SourceNode 创建失败", error);
-    }
+    this.rebuildSourceNode();
   }
 
   /**
@@ -70,6 +60,27 @@ export class AudioElementPlayer extends BaseAudioPlayer {
   public async load(url: string): Promise<void> {
     this.audioElement.src = url;
     this.audioElement.load();
+  }
+
+  /**
+   * 重新创建 MediaElementSourceNode 以获取正确的声道数
+   */
+  private rebuildSourceNode(): void {
+    if (!this.audioCtx || !this.inputNode) return;
+
+    try {
+      if (this.sourceNode) {
+        this.sourceNode.disconnect();
+      }
+      this.sourceNode = this.audioCtx.createMediaElementSource(this.audioElement);
+      // 记录当前音频声道数
+      this._channels = this.sourceNode.channelCount;
+      console.log("[AudioElementPlayer] 重建 SourceNode，当前声道数:", this._channels);
+      // 连接: Source -> Input
+      this.sourceNode.connect(this.inputNode);
+    } catch (error) {
+      console.error("[AudioElementPlayer] SourceNode 创建失败", error);
+    }
   }
 
   /**
@@ -225,12 +236,7 @@ export class AudioElementPlayer extends BaseAudioPlayer {
   }
 
   public getChannels(): number {
-    const audioEl = this.audioElement as unknown as {
-      mozChannels?: number;
-      channels?: number;
-    };
-    const channels = audioEl.mozChannels ?? audioEl.channels;
-    return channels ?? 2;
+    return this._channels;
   }
 
   /**
