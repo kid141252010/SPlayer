@@ -420,13 +420,11 @@ export async function readLocalLyricImpl(
                 } else {
                     await cache.delete(filePath, { autoSave: false });
                     isCacheDirty = true;
-                    // @ts-ignore
                     cachedByName = undefined;
                 }
-            } catch (e) {
+            } catch {
                 await cache.delete(filePath, { autoSave: false });
                 isCacheDirty = true;
-                // @ts-ignore
                 cachedByName = undefined;
             }
         }
