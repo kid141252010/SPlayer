@@ -48,7 +48,12 @@ class LyricManager {
 
   private shouldApplyTtmlOffset(): boolean {
     const statusStore = useStatusStore();
-    return statusStore.currentAudioChannels === 6;
+    const channels = statusStore.currentAudioChannels;
+    const result = channels === 6;
+    console.log(
+      `[LyricManager] shouldApplyTtmlOffset 检查: channels=${channels}, result=${result}`,
+    );
+    return result;
   }
   /**
    * 当前有效的请求序列
@@ -336,7 +341,13 @@ class LyricManager {
       if (!ttmlContent || typeof ttmlContent !== "string") return;
       const sorted = cleanTTMLTranslations(ttmlContent);
       const parsed = parseTTML(sorted);
-      const lyricOffsetMs = this.shouldApplyTtmlOffset() ? extractTtmlLyricOffsetMs(sorted) : 0;
+      const shouldOffset = this.shouldApplyTtmlOffset();
+      const lyricOffsetMs = shouldOffset ? extractTtmlLyricOffsetMs(sorted) : 0;
+      if (lyricOffsetMs !== 0) {
+        console.log(
+          `[LyricManager] TTML 歌词偏移: ${lyricOffsetMs}ms (shouldOffset=${shouldOffset})`,
+        );
+      }
       const lines = applyLyricOffsetToLines(parsed?.lines || [], lyricOffsetMs);
       if (!lines.length) return;
 
