@@ -339,15 +339,15 @@ class LyricManager {
         }
       }
       if (!ttmlContent || typeof ttmlContent !== "string") return;
-      const sorted = cleanTTMLTranslations(ttmlContent);
-      const parsed = parseTTML(sorted);
       const shouldOffset = this.shouldApplyTtmlOffset();
-      const lyricOffsetMs = shouldOffset ? extractTtmlLyricOffsetMs(sorted) : 0;
+      const lyricOffsetMs = shouldOffset ? extractTtmlLyricOffsetMs(ttmlContent) : 0;
       if (lyricOffsetMs !== 0) {
         console.log(
           `[LyricManager] TTML 歌词偏移: ${lyricOffsetMs}ms (shouldOffset=${shouldOffset})`,
         );
       }
+      const sorted = cleanTTMLTranslations(ttmlContent);
+      const parsed = parseTTML(sorted);
       const lines = applyLyricOffsetToLines(parsed?.lines || [], lyricOffsetMs);
       if (!lines.length) return;
 
@@ -753,9 +753,9 @@ class LyricManager {
       if (lyric) {
         // TTML 直接返回（最高优先级）
         if (format === "ttml") {
+          const lyricOffsetMs = this.shouldApplyTtmlOffset() ? extractTtmlLyricOffsetMs(lyric) : 0;
           const sorted = this.cleanTTMLTranslations(lyric);
           const ttml = parseTTML(sorted);
-          const lyricOffsetMs = this.shouldApplyTtmlOffset() ? extractTtmlLyricOffsetMs(sorted) : 0;
           const lines = applyLyricOffsetToLines(ttml?.lines || [], lyricOffsetMs);
           return {
             data: { lrcData: [], yrcData: lines },
@@ -1016,11 +1016,11 @@ class LyricManager {
       try {
         const ttmlContent = typeof ttml === "string" ? ttml : "";
         if (ttmlContent) {
+          const lyricOffsetMs = this.shouldApplyTtmlOffset()
+            ? extractTtmlLyricOffsetMs(ttmlContent)
+            : 0;
           const cleaned = cleanTTMLTranslations(ttmlContent);
           const raw = parseTTML(cleaned).lines || [];
-          const lyricOffsetMs = this.shouldApplyTtmlOffset()
-            ? extractTtmlLyricOffsetMs(cleaned)
-            : 0;
           ttmlLines = applyLyricOffsetToLines(raw, lyricOffsetMs);
           console.log("检测到本地TTML歌词覆盖", ttmlLines);
         }
