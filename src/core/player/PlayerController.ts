@@ -498,9 +498,9 @@ class PlayerController {
         const onSwitch = crossfadeOptions.onSwitch;
         const wrappedOnSwitch = shouldDeferStateSync
           ? () => {
-            onSwitch?.();
-            updateSeekState();
-          }
+              onSwitch?.();
+              updateSeekState();
+            }
           : onSwitch;
         await audioManager.crossfadeTo(url, {
           duration: crossfadeOptions.duration,
@@ -678,6 +678,8 @@ class PlayerController {
       const playSongData = getPlaySongData();
       // 结束加载
       statusStore.playLoading = false;
+      // 更新声道数信息
+      statusStore.currentAudioChannels = audioManager.getChannels();
       // 恢复 EQ
       if (isElectron && statusStore.eqEnabled) {
         const bands = statusStore.eqBands;

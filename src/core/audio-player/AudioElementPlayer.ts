@@ -224,6 +224,15 @@ export class AudioElementPlayer extends BaseAudioPlayer {
     }
   }
 
+  public getChannels(): number {
+    const audioEl = this.audioElement as unknown as {
+      mozChannels?: number;
+      channels?: number;
+    };
+    const channels = audioEl.mozChannels ?? audioEl.channels;
+    return channels ?? 2;
+  }
+
   /**
    * 监听原生 DOM 事件并转发为标准事件
    * 将 HTMLAudioElement 的事件转换为 BaseAudioPlayer 的统一事件格式

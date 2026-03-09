@@ -272,6 +272,10 @@ export class MpvPlayer extends EventTarget implements IPlaybackEngine {
     return this._errorCode;
   }
 
+  public getChannels(): number {
+    return 2;
+  }
+
   // ========== 状态属性 ==========
 
   public get duration(): number {

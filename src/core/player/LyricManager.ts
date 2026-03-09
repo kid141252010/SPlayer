@@ -45,6 +45,11 @@ class LyricManager {
    * 每次发起新请求递增
    */
   private lyricReqSeq = 0;
+
+  private shouldApplyTtmlOffset(): boolean {
+    const statusStore = useStatusStore();
+    return statusStore.currentAudioChannels === 6;
+  }
   /**
    * 当前有效的请求序列
    * 用于校验返回是否属于当前歌曲的最新请求
@@ -331,7 +336,7 @@ class LyricManager {
       if (!ttmlContent || typeof ttmlContent !== "string") return;
       const sorted = cleanTTMLTranslations(ttmlContent);
       const parsed = parseTTML(sorted);
-      const lyricOffsetMs = extractTtmlLyricOffsetMs(sorted);
+      const lyricOffsetMs = this.shouldApplyTtmlOffset() ? extractTtmlLyricOffsetMs(sorted) : 0;
       const lines = applyLyricOffsetToLines(parsed?.lines || [], lyricOffsetMs);
       if (!lines.length) return;
 
@@ -739,7 +744,7 @@ class LyricManager {
         if (format === "ttml") {
           const sorted = this.cleanTTMLTranslations(lyric);
           const ttml = parseTTML(sorted);
-          const lyricOffsetMs = extractTtmlLyricOffsetMs(sorted);
+          const lyricOffsetMs = this.shouldApplyTtmlOffset() ? extractTtmlLyricOffsetMs(sorted) : 0;
           const lines = applyLyricOffsetToLines(ttml?.lines || [], lyricOffsetMs);
           return {
             data: { lrcData: [], yrcData: lines },
@@ -1002,7 +1007,9 @@ class LyricManager {
         if (ttmlContent) {
           const cleaned = cleanTTMLTranslations(ttmlContent);
           const raw = parseTTML(cleaned).lines || [];
-          const lyricOffsetMs = extractTtmlLyricOffsetMs(cleaned);
+          const lyricOffsetMs = this.shouldApplyTtmlOffset()
+            ? extractTtmlLyricOffsetMs(cleaned)
+            : 0;
           ttmlLines = applyLyricOffsetToLines(raw, lyricOffsetMs);
           console.log("检测到本地TTML歌词覆盖", ttmlLines);
         }
