@@ -20,7 +20,12 @@ import { parseLrc } from "@/utils/lyric/parseLrc";
 import { getConverter } from "@/utils/opencc";
 import { type LyricLine, parseTTML, parseYrc } from "@applemusic-like-lyrics/lyric";
 import { cloneDeep, isEmpty } from "lodash-es";
-import { attachTtmlBgLines, cleanTTMLTranslations } from "@/utils/lyric/parseTTML";
+import {
+  applyLyricOffsetToLines,
+  attachTtmlBgLines,
+  cleanTTMLTranslations,
+  extractTtmlLyricOffsetMs,
+} from "@/utils/lyric/parseTTML";
 
 interface LyricFetchResult {
   data: SongLyric;
@@ -326,7 +331,8 @@ class LyricManager {
       if (!ttmlContent || typeof ttmlContent !== "string") return;
       const sorted = cleanTTMLTranslations(ttmlContent);
       const parsed = parseTTML(sorted);
-      const lines = parsed?.lines || [];
+      const lyricOffsetMs = extractTtmlLyricOffsetMs(sorted);
+      const lines = applyLyricOffsetToLines(parsed?.lines || [], lyricOffsetMs);
       if (!lines.length) return;
 
       // 只有当没有 YRC 数据或优先级为 TTML 或 自动模式(TTML > QM) 时才覆盖
@@ -594,7 +600,7 @@ class LyricManager {
       // 遍历候选歌曲，按匹配度筛选
       const matchedCandidates: number[] = [];
       let firstMatchedNcmId: number | null = null;
-      let checkTTML = settingStore.enableOnlineTTMLLyric; // 如果启用了TTML，我们可以尝试并行竞速获取
+      const checkTTML = settingStore.enableOnlineTTMLLyric; // 如果启用了TTML，我们可以尝试并行竞速获取
 
       for (const candidate of songs) {
         const candidateName = candidate.name?.trim() || "";
@@ -666,7 +672,7 @@ class LyricManager {
           console.log(`[MetadataMatch] 🚀 TTML 竞速成功，选用 ID: ${winId}`);
           await saveMatchResult(winId);
           return winId;
-        } catch (e) {
+        } catch {
           // Promise.any 抛出 AggregateError 说明所有候选者都没有 TTML，回退使用第一个元数据匹配的 ID
           console.log(`[MetadataMatch] 候选者均无 TTML，回退首选 ID: ${firstMatchedNcmId}`);
         }
@@ -733,7 +739,8 @@ class LyricManager {
         if (format === "ttml") {
           const sorted = this.cleanTTMLTranslations(lyric);
           const ttml = parseTTML(sorted);
-          const lines = ttml?.lines || [];
+          const lyricOffsetMs = extractTtmlLyricOffsetMs(sorted);
+          const lines = applyLyricOffsetToLines(ttml?.lines || [], lyricOffsetMs);
           return {
             data: { lrcData: [], yrcData: lines },
             meta: { usingTTMLLyric: true, usingQRCLyric: false },
@@ -995,7 +1002,8 @@ class LyricManager {
         if (ttmlContent) {
           const cleaned = cleanTTMLTranslations(ttmlContent);
           const raw = parseTTML(cleaned).lines || [];
-          ttmlLines = raw;
+          const lyricOffsetMs = extractTtmlLyricOffsetMs(cleaned);
+          ttmlLines = applyLyricOffsetToLines(raw, lyricOffsetMs);
           console.log("检测到本地TTML歌词覆盖", ttmlLines);
         }
       } catch (err) {
@@ -1354,7 +1362,9 @@ class LyricManager {
             if (localIndex && fileName in localIndex && localIndex[fileName] !== null) {
               savedNcmId = localIndex[fileName];
             }
-          } catch {}
+          } catch {
+            savedNcmId = undefined;
+          }
           if (!savedNcmId) {
             try {
               const cacheManager = useCacheManager();
@@ -1367,7 +1377,9 @@ class LyricManager {
                 const parsed = JSON.parse(decoder.decode(cached.data));
                 if (parsed && typeof parsed.ncmId === "number") savedNcmId = parsed.ncmId;
               }
-            } catch {}
+            } catch {
+              savedNcmId = undefined;
+            }
           }
         }
 
