@@ -67,16 +67,12 @@ export const extractTtmlLyricOffsetMs = (ttml: string): number => {
   if (!ttml.trim()) return 0;
   const doc = new DOMParser().parseFromString(ttml, "application/xml");
   if (doc.getElementsByTagName("parsererror").length) {
-    console.log("[extractTtmlLyricOffsetMs] XML 解析错误");
     return 0;
   }
 
   const audioNodes = Array.from(doc.getElementsByTagName("audio"));
-  console.log(`[extractTtmlLyricOffsetMs] 找到 ${audioNodes.length} 个 audio 节点`);
-
   for (const audio of audioNodes) {
     const role = getRole(audio);
-    console.log(`[extractTtmlLyricOffsetMs] audio 节点 role: "${role}"`);
     if (role !== "spatial") continue;
 
     let inMetadata = false;
@@ -89,20 +85,15 @@ export const extractTtmlLyricOffsetMs = (ttml: string): number => {
       }
       cur = cur.parentElement;
     }
-    console.log(`[extractTtmlLyricOffsetMs] audio 在 metadata 中: ${inMetadata}`);
     if (!inMetadata) continue;
 
     const rawOffset = audio.getAttribute("lyricOffset");
-    console.log(`[extractTtmlLyricOffsetMs] lyricOffset 属性: "${rawOffset}"`);
     if (!rawOffset) continue;
     const offsetSeconds = Number.parseFloat(rawOffset.trim());
     if (!Number.isFinite(offsetSeconds)) continue;
-    const result = Math.round(offsetSeconds * 1000);
-    console.log(`[extractTtmlLyricOffsetMs] 计算偏移: ${result}ms`);
-    return result;
+    return Math.round(offsetSeconds * 1000);
   }
 
-  console.log("[extractTtmlLyricOffsetMs] 未找到有效的偏移值");
   return 0;
 };
 

@@ -48,12 +48,7 @@ class LyricManager {
 
   private shouldApplyTtmlOffset(): boolean {
     const statusStore = useStatusStore();
-    const channels = statusStore.currentAudioChannels;
-    const result = channels === 6;
-    console.log(
-      `[LyricManager] shouldApplyTtmlOffset 检查: channels=${channels}, result=${result}`,
-    );
-    return result;
+    return statusStore.currentAudioChannels === 6;
   }
   /**
    * 当前有效的请求序列
@@ -341,11 +336,6 @@ class LyricManager {
       if (!ttmlContent || typeof ttmlContent !== "string") return;
       const shouldOffset = this.shouldApplyTtmlOffset();
       const lyricOffsetMs = shouldOffset ? extractTtmlLyricOffsetMs(ttmlContent) : 0;
-      if (lyricOffsetMs !== 0) {
-        console.log(
-          `[LyricManager] TTML 歌词偏移: ${lyricOffsetMs}ms (shouldOffset=${shouldOffset})`,
-        );
-      }
       const sorted = cleanTTMLTranslations(ttmlContent);
       const parsed = parseTTML(sorted);
       const lines = applyLyricOffsetToLines(parsed?.lines || [], lyricOffsetMs);
@@ -1022,7 +1012,6 @@ class LyricManager {
           const cleaned = cleanTTMLTranslations(ttmlContent);
           const raw = parseTTML(cleaned).lines || [];
           ttmlLines = applyLyricOffsetToLines(raw, lyricOffsetMs);
-          console.log("检测到本地TTML歌词覆盖", ttmlLines);
         }
       } catch (err) {
         console.error("parseTTML 本地解析失败:", err);
