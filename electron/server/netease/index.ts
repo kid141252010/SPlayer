@@ -94,7 +94,10 @@ export const initNcmAPI = async (fastify: FastifyInstance) => {
       }
 
       if (!server.includes("%s")) {
-        serverLog.error("❌ TTML Lyric Fetch Blocked: Missing %s placeholder in server config", server);
+        serverLog.error(
+          "❌ TTML Lyric Fetch Blocked: Missing %s placeholder in server config",
+          server,
+        );
         return reply.status(500).send({ error: "Invalid server configuration" });
       }
 

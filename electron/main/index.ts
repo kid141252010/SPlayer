@@ -69,53 +69,56 @@ class MainProcess {
     this.handleAppEvents();
     // Electron 初始化完成后
     // 某些 API 只有在此事件发生后才能使用
-    app.whenReady().then(async () => {
-      processLog.info("🚀 Application Process Startup");
+    app
+      .whenReady()
+      .then(async () => {
+        processLog.info("🚀 Application Process Startup");
 
-      // 配置 COOP/COEP/CORP 头，FFmpeg 需要
-      session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
-        const responseHeaders = { ...details.responseHeaders };
-        const url = new URL(details.url);
+        // 配置 COOP/COEP/CORP 头，FFmpeg 需要
+        session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+          const responseHeaders = { ...details.responseHeaders };
+          const url = new URL(details.url);
 
-        // 桌面歌词窗口需要透明背景，必须排除严格的安全策略
-        if (url.searchParams.get("win") === "desktop-lyric") {
+          // 桌面歌词窗口需要透明背景，必须排除严格的安全策略
+          if (url.searchParams.get("win") === "desktop-lyric") {
+            callback({ responseHeaders });
+            return;
+          }
+
+          // 同样可以解决 CORS 限制，但为了避免安全问题，等真有需要的时候再开
+          // responseHeaders["Access-Control-Allow-Origin"] = ["*"];
+          // responseHeaders["Access-Control-Allow-Headers"] = ["*"];
+
+          // COOP/COEP/CORP 配置
+          responseHeaders["Cross-Origin-Opener-Policy"] = ["same-origin"];
+          responseHeaders["Cross-Origin-Embedder-Policy"] = ["require-corp"];
+          responseHeaders["Cross-Origin-Resource-Policy"] = ["cross-origin"];
+
           callback({ responseHeaders });
-          return;
+        });
+
+        // 设置应用程序名称
+        electronApp.setAppUserModelId("com.imsyy.splayer");
+        // 启动主服务进程
+        try {
+          await initAppServer();
+        } catch (err) {
+          processLog.error("🚫 Failed to start AppServer:", err);
         }
-
-        // 同样可以解决 CORS 限制，但为了避免安全问题，等真有需要的时候再开
-        // responseHeaders["Access-Control-Allow-Origin"] = ["*"];
-        // responseHeaders["Access-Control-Allow-Headers"] = ["*"];
-
-        // COOP/COEP/CORP 配置
-        responseHeaders["Cross-Origin-Opener-Policy"] = ["same-origin"];
-        responseHeaders["Cross-Origin-Embedder-Policy"] = ["require-corp"];
-        responseHeaders["Cross-Origin-Resource-Policy"] = ["cross-origin"];
-
-        callback({ responseHeaders });
+        // 启动窗口
+        this.loadWindow = loadWindow.create();
+        this.mainWindow = mainWindow.create();
+        // 注册其他服务
+        this.mainTray = initTray(this.mainWindow!);
+        // 注册 IPC 通信
+        initIpc();
+        // 自动启动 WebSocket
+        SocketService.tryAutoStart();
+      })
+      .catch((err) => {
+        processLog.error("🚀 Fatal error during application startup:", err);
+        console.error("🚀 Fatal error during application startup:", err);
       });
-
-      // 设置应用程序名称
-      electronApp.setAppUserModelId("com.imsyy.splayer");
-      // 启动主服务进程
-      try {
-        await initAppServer();
-      } catch (err) {
-        processLog.error("🚫 Failed to start AppServer:", err);
-      }
-      // 启动窗口
-      this.loadWindow = loadWindow.create();
-      this.mainWindow = mainWindow.create();
-      // 注册其他服务
-      this.mainTray = initTray(this.mainWindow!);
-      // 注册 IPC 通信
-      initIpc();
-      // 自动启动 WebSocket
-      SocketService.tryAutoStart();
-    }).catch(err => {
-      processLog.error("🚀 Fatal error during application startup:", err);
-      console.error("🚀 Fatal error during application startup:", err);
-    });
   }
   // 应用程序事件
   handleAppEvents() {

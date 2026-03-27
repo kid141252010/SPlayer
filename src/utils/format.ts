@@ -74,19 +74,20 @@ export const formatSongsList = (data: any[]): SongType[] => {
         typeof item.album === "string"
           ? item.album
           : {
-            id: (item.album || item.al)?.id,
-            name: (item.album || item.al)?.name,
-            cover: (item.album || item.al)?.picUrl,
-          },
+              id: (item.album || item.al)?.id,
+              name: (item.album || item.al)?.name,
+              cover: (item.album || item.al)?.picUrl,
+            },
       alia: isArray(item.alia || item.alias || item.transNames || item.tns)
         ? item.alia?.[0] || item.alias?.[0] || item.transNames?.[0] || item.tns?.[0]
         : item.alia,
       dj: item.dj
         ? {
-          id: item.mainTrackId || item.id,
-          name: item.dj?.brand,
-          creator: item.dj?.nickname,
-        }
+            id: item.mainTrackId || item.id,
+            radioId: item.radio?.id,
+            name: item.dj?.brand,
+            creator: item.dj?.nickname,
+          }
         : undefined,
       ...getCoverUrl(item),
       duration: Number(item.duration || item.dt || 0),
@@ -204,13 +205,13 @@ export const formatCommentList = (data: any[]): CommentType[] => {
     beReplied:
       item.beReplied?.length > 0
         ? {
-          content: item.beReplied[0]?.content,
-          user: {
-            id: item.beReplied[0]?.user.userId,
-            name: item.beReplied[0]?.user.nickname,
-            avatarUrl: item.beReplied[0]?.user.avatarUrl,
-          },
-        }
+            content: item.beReplied[0]?.content,
+            user: {
+              id: item.beReplied[0]?.user.userId,
+              name: item.beReplied[0]?.user.nickname,
+              avatarUrl: item.beReplied[0]?.user.avatarUrl,
+            },
+          }
         : undefined,
     time: item.time,
     likedCount: item.likedCount,
@@ -226,9 +227,9 @@ export const formatCommentList = (data: any[]): CommentType[] => {
     },
     ip: item?.ip
       ? {
-        ip: item.ip,
-        location: item.location,
-      }
+          ip: item.ip,
+          location: item.location,
+        }
       : undefined,
   }));
 };
@@ -359,7 +360,7 @@ export const getPlayerInfoObj = (
   // 歌手
   const artist =
     playSongData.type === "radio"
-      ? "播客电台"
+      ? playSongData.dj?.creator || "未知播客"
       : Array.isArray(playSongData.artists)
         ? playSongData.artists.map((artists: { name: string }) => artists.name).join(sep)
         : String(playSongData?.artists || "未知歌手");
@@ -367,7 +368,7 @@ export const getPlayerInfoObj = (
   // 专辑
   const album =
     playSongData.type === "radio"
-      ? "播客电台"
+      ? playSongData.dj?.name || "未知播客"
       : typeof playSongData.album === "object"
         ? playSongData.album.name
         : String(playSongData.album || "未知专辑");

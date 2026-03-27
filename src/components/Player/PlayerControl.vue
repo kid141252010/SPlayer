@@ -39,18 +39,15 @@
           >
             <SvgIcon name="Download" />
           </div>
+          <!-- 显示评论 -->
           <n-badge
             :value="formatCommentCount(statusStore.songCommentCount)"
+            v-if="showCommentButton"
             :show="
               statusStore.songCommentCount > 0 && settingStore.fullscreenPlayerElements.commentCount
             "
           >
             <div
-              v-if="
-                !musicStore.playSong.path &&
-                !statusStore.pureLyricMode &&
-                settingStore.fullscreenPlayerElements.comments
-              "
               class="menu-icon"
               @click.stop="statusStore.showPlayerComment = !statusStore.showPlayerComment"
             >
@@ -172,7 +169,7 @@ const { timeDisplay, toggleTimeFormat } = useTimeFormat();
 
 // 获取评论数量
 const fetchCommentCount = async () => {
-  if (!settingStore.fullscreenPlayerElements.commentCount) return;
+  if (!showCommentButton.value || !settingStore.fullscreenPlayerElements.commentCount) return;
   const id = musicStore.playSong.id;
   if (!id || typeof id !== "number" || musicStore.playSong.path) return;
   try {
@@ -185,6 +182,13 @@ const fetchCommentCount = async () => {
     // 忽略错误
   }
 };
+
+const showCommentButton = computed(
+  () =>
+    !musicStore.playSong.path &&
+    !statusStore.pureLyricMode &&
+    settingStore.fullscreenPlayerElements.comments,
+);
 
 // 歌曲变化时获取评论数量
 watch(

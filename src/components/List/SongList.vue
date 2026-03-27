@@ -1,8 +1,8 @@
 <!-- 歌曲列表 - 虚拟列表 -->
 <template>
-  <Transition name="fade" mode="out-in">
+  <Transition name="fade">
     <div v-if="!isEmpty(listData)" ref="songListRef" class="song-list">
-      <Transition name="fade" mode="out-in">
+      <Transition name="fade">
         <div
           :key="listKey"
           :style="{
@@ -97,11 +97,21 @@
               <div v-if="item.type === 'song'" class="song-node">
                 <!-- 拖拽放置指示线 -->
                 <div
-                  v-if="isDragging && draggable && dropIndicator.index === index && dropIndicator.position === 'top'"
+                  v-if="
+                    isDragging &&
+                    draggable &&
+                    dropIndicator.index === index &&
+                    dropIndicator.position === 'top'
+                  "
                   class="drop-line line-top"
                 />
                 <div
-                  v-if="isDragging && draggable && dropIndicator.index === index && dropIndicator.position === 'bottom'"
+                  v-if="
+                    isDragging &&
+                    draggable &&
+                    dropIndicator.index === index &&
+                    dropIndicator.position === 'bottom'
+                  "
                   class="drop-line line-bottom"
                 />
                 <SongCard
@@ -111,8 +121,16 @@
                   :hiddenCover="hiddenCover || settingStore.hiddenCovers.list"
                   :hiddenAlbum="hiddenAlbum"
                   :hiddenSize="hiddenSize"
-                  @mousedown="draggable ? handlePointerDown($event, index, item.data.name || '未知曲目') : undefined"
-                  @touchstart="draggable ? handlePointerDown($event, index, item.data.name || '未知曲目') : undefined"
+                  @mousedown="
+                    draggable
+                      ? handlePointerDown($event, index, item.data.name || '未知曲目')
+                      : undefined
+                  "
+                  @touchstart="
+                    draggable
+                      ? handlePointerDown($event, index, item.data.name || '未知曲目')
+                      : undefined
+                  "
                   @click.stop="handleSongClick(item.data)"
                   @dblclick.stop="handleSongPlay(item.data)"
                   @contextmenu.stop="handleShowMenu($event, item.data, index)"
@@ -540,6 +558,13 @@ onBeforeUnmount(() => {
   height: 100%;
   border-radius: 12px 0 0 12px;
   overflow: hidden;
+  // 离场时脱离文档流，避免新旧内容同时存在时布局跳动
+  &.fade-leave-active {
+    position: absolute;
+    left: 0;
+    right: 0;
+    pointer-events: none;
+  }
   .song-card {
     padding-bottom: 12px;
     // padding-right: 4px;
@@ -633,6 +658,13 @@ onBeforeUnmount(() => {
       height 0.3s,
       transform 0.3s,
       opacity 0.3s;
+    // 离场时脱离文档流，避免新旧列表同时存在时布局跳动
+    &.fade-leave-active {
+      position: absolute;
+      left: 0;
+      right: 0;
+      pointer-events: none;
+    }
     .sticky-header {
       position: sticky;
       top: 0;

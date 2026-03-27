@@ -10,6 +10,7 @@ import { isElectron } from "@/utils/env";
 import { applyBracketReplacement } from "@/utils/lyric/lyricFormat";
 import { applyProfanityUncensor } from "@/utils/lyric/lyricProfanity";
 import {
+  alignLyricLines,
   alignLyrics,
   isWordLevelFormat,
   parseQRCLyric,
@@ -51,7 +52,7 @@ class LyricManager {
    */
   private prefetchedLyric: { id: number | string; result: LyricFetchResult } | null = null;
 
-  constructor() { }
+  constructor() {}
 
   /**
    * 重置当前歌曲的歌词数据
@@ -112,6 +113,11 @@ class LyricManager {
   }
 
   /**
+   * 从 QQ 音乐获取歌词（封装方法，供在线和本地歌曲使用）
+   * @param song 歌曲对象，内部自动判断本地/在线并生成缓存 key
+   * @returns 歌词数据，如果获取失败返回 null
+   */
+  /**
    * 对齐本地歌词
    * @param lyricData 本地歌词数据
    * @returns 对齐后的本地歌词数据
@@ -126,6 +132,7 @@ class LyricManager {
     const toText = (line: LyricLine) => String(line?.words?.[0]?.word || "").trim();
     const lrc = lyricData.lrcData || [];
     if (!lrc.length) return lyricData;
+
     // 按开始时间分组，时间差 < 0.6s 视为同组
     const sorted = [...lrc].sort((a, b) => toTime(a) - toTime(b));
     const groups: LyricLine[][] = [];
@@ -135,6 +142,7 @@ class LyricManager {
       if (last && Math.abs(st - toTime(last)) < 0.6) groups[groups.length - 1].push(line);
       else groups.push([line]);
     }
+
     // 组装：第 1 行主句；第 2 行翻译；第 3 行音译；不调整时长
     const aligned = groups.map((group) => {
       const base = { ...group[0] } as LyricLine;
@@ -150,14 +158,10 @@ class LyricManager {
       }
       return base;
     });
+
     return { lrcData: aligned, yrcData: lyricData.yrcData };
   }
 
-  /**
-   * 从 QQ 音乐获取歌词（封装方法，供在线和本地歌曲使用）
-   * @param song 歌曲对象，内部自动判断本地/在线并生成缓存 key
-   * @returns 歌词数据，如果获取失败返回 null
-   */
   private async fetchQQMusicLyric(song: SongType): Promise<SongLyric | null> {
     // 构建歌手字符串
     const artistsStr = Array.isArray(song.artists)
@@ -502,7 +506,10 @@ class LyricManager {
     // 1. 优先检查本地便携式索引 (仅限桌面端有合法路径)
     if (isElectron && dirPath && fileName && window.electron?.ipcRenderer) {
       try {
-        const localIndex = await window.electron.ipcRenderer.invoke("get-local-match-index", dirPath);
+        const localIndex = await window.electron.ipcRenderer.invoke(
+          "get-local-match-index",
+          dirPath,
+        );
         if (localIndex && fileName in localIndex) {
           const ncmId = localIndex[fileName];
           if (ncmId === null) {
@@ -516,7 +523,6 @@ class LyricManager {
         console.warn(`[MetadataMatch] 读取本地索引失败: ${err}`);
       }
     }
-
 
     // 3. 检查全局 CacheDB 缓存
     const cacheKey = `ncm-match:${song.path || song.name}`;
@@ -545,9 +551,11 @@ class LyricManager {
       this.saveMatchCache(cacheKey, id);
       // 保存至便携式本地索引
       if (isElectron && dirPath && fileName && window.electron?.ipcRenderer) {
-        window.electron.ipcRenderer.invoke("save-local-match-index", dirPath, fileName, id).catch((err: any) => {
-          console.warn(`[MetadataMatch] 写入本地索引失败: ${err}`);
-        });
+        window.electron.ipcRenderer
+          .invoke("save-local-match-index", dirPath, fileName, id)
+          .catch((err: any) => {
+            console.warn(`[MetadataMatch] 写入本地索引失败: ${err}`);
+          });
       }
     };
 
@@ -556,7 +564,9 @@ class LyricManager {
     const albumStr = localAlbum || "";
     const durationSec = song.duration ? Math.floor(song.duration / 1000) : 0;
 
-    console.log(`[MetadataMatch] 调用 /search/match 匹配: "${songName}" - "${artistStr}" (级别: ${matchLevel})`);
+    console.log(
+      `[MetadataMatch] 调用 /search/match 匹配: "${songName}" - "${artistStr}" (级别: ${matchLevel})`,
+    );
 
     try {
       const res = await searchMatch(songName, albumStr, artistStr, durationSec, "");
@@ -588,7 +598,7 @@ class LyricManager {
       // 遍历候选歌曲，按匹配度筛选
       const matchedCandidates: number[] = [];
       let firstMatchedNcmId: number | null = null;
-      let checkTTML = settingStore.enableOnlineTTMLLyric; // 如果启用了TTML，我们可以尝试并行竞速获取
+      const checkTTML = settingStore.enableOnlineTTMLLyric; // 如果启用了TTML，我们可以尝试并行竞速获取
 
       for (const candidate of songs) {
         const candidateName = candidate.name?.trim() || "";
@@ -604,29 +614,22 @@ class LyricManager {
           const nameMatch = this.isExactMatch(songName, candidateName);
           const artistMatch =
             localArtists.length === 0 ||
-            localArtists.some((la) =>
-              candidateArtists.some((ca) => this.isExactMatch(la, ca)),
-            );
-          const albumMatch =
-            !localAlbum || this.isExactMatch(localAlbum, candidateAlbum);
+            localArtists.some((la) => candidateArtists.some((ca) => this.isExactMatch(la, ca)));
+          const albumMatch = !localAlbum || this.isExactMatch(localAlbum, candidateAlbum);
           matched = nameMatch && artistMatch && albumMatch;
         } else if (matchLevel === "normal") {
           // 标准：歌名精确 + 至少一个歌手精确
           const nameMatch = this.isExactMatch(songName, candidateName);
           const artistMatch =
             localArtists.length === 0 ||
-            localArtists.some((la) =>
-              candidateArtists.some((ca) => this.isExactMatch(la, ca)),
-            );
+            localArtists.some((la) => candidateArtists.some((ca) => this.isExactMatch(la, ca)));
           matched = nameMatch && artistMatch;
         } else {
           // 宽松：歌名包含 + 歌手包含
           const nameMatch = this.isContainsMatch(songName, candidateName);
           const artistMatch =
             localArtists.length === 0 ||
-            localArtists.some((la) =>
-              candidateArtists.some((ca) => this.isContainsMatch(la, ca)),
-            );
+            localArtists.some((la) => candidateArtists.some((ca) => this.isContainsMatch(la, ca)));
           matched = nameMatch && artistMatch;
         }
 
@@ -650,7 +653,10 @@ class LyricManager {
 
       // 并发检查 TTML 短路提速
       if (checkTTML && matchedCandidates.length > 0) {
-        console.log(`[MetadataMatch] 开始并发检查 ${matchedCandidates.length} 个候选者的 TTML:`, matchedCandidates);
+        console.log(
+          `[MetadataMatch] 开始并发检查 ${matchedCandidates.length} 个候选者的 TTML:`,
+          matchedCandidates,
+        );
         try {
           // 竞速：任何一个含有 TTML 的请求先返回就直接采用
           const winId = await Promise.any(
@@ -658,13 +664,13 @@ class LyricManager {
               const ttml = await songLyricTTML(id);
               if (ttml) return id;
               throw new Error("No TTML");
-            })
+            }),
           );
 
           console.log(`[MetadataMatch] 🚀 TTML 竞速成功，选用 ID: ${winId}`);
           await saveMatchResult(winId);
           return winId;
-        } catch (e) {
+        } catch {
           // Promise.any 抛出 AggregateError 说明所有候选者都没有 TTML，回退使用第一个元数据匹配的 ID
           console.log(`[MetadataMatch] 候选者均无 TTML，回退首选 ID: ${firstMatchedNcmId}`);
         }
@@ -704,7 +710,10 @@ class LyricManager {
    * @param overrideResult 外部全局覆盖的歌词结果（如果有）
    * @returns 歌词数据和元数据
    */
-  private async fetchLocalLyric(song: SongType, overrideResult?: LyricFetchResult): Promise<LyricFetchResult> {
+  private async fetchLocalLyric(
+    song: SongType,
+    overrideResult?: LyricFetchResult,
+  ): Promise<LyricFetchResult> {
     const defaultResult: LyricFetchResult = {
       data: { lrcData: [], yrcData: [] },
       meta: { usingTTMLLyric: false, usingQRCLyric: false },
@@ -713,8 +722,12 @@ class LyricManager {
 
     try {
       const settingStore = useSettingStore();
-      const localLyricData: { lyric?: string; format?: "lrc" | "ttml" | "yrc", external?: any, embedded?: any } =
-        await window.electron.ipcRenderer.invoke("get-music-lyric", song.path);
+      const localLyricData: {
+        lyric?: string;
+        format?: "lrc" | "ttml" | "yrc";
+        external?: any;
+        embedded?: any;
+      } = await window.electron.ipcRenderer.invoke("get-music-lyric", song.path);
       const { lyric, format, external } = localLyricData;
 
       // ── 情况 A：已有本地嵌入/关联歌词 ──
@@ -762,7 +775,6 @@ class LyricManager {
         }
       }
 
-
       // 获取歌词质量等级: TTML(4) > QRC(3) > YRC(2) > LRC(1)
       const getLyricLevel = (res: LyricFetchResult | null) => {
         if (!res) return 0;
@@ -776,7 +788,11 @@ class LyricManager {
       // 1. 同级同名明确优先: 原逻辑如果同级找到了就用 localResult
       // 如果没有且传入了全局目录的 overrideResult，优先回退到 overrideResult
       let baseLocalResult = localResult;
-      if (!baseLocalResult && overrideResult && (!isEmpty(overrideResult.data.lrcData) || !isEmpty(overrideResult.data.yrcData))) {
+      if (
+        !baseLocalResult &&
+        overrideResult &&
+        (!isEmpty(overrideResult.data.lrcData) || !isEmpty(overrideResult.data.yrcData))
+      ) {
         baseLocalResult = overrideResult;
       }
 
@@ -821,11 +837,14 @@ class LyricManager {
             }
           }
         }
-
       }
 
       // 2. QQ 音乐匹配 (补充逐字)
-      if (settingStore.localLyricQQMusicMatch && !finalResult.meta.usingTTMLLyric && !finalResult.meta.usingQRCLyric) {
+      if (
+        settingStore.localLyricQQMusicMatch &&
+        !finalResult.meta.usingTTMLLyric &&
+        !finalResult.meta.usingQRCLyric
+      ) {
         const qqLyric = await this.fetchQQMusicLyric(song);
         if (qqLyric && qqLyric.yrcData.length > 0) {
           finalResult.data.yrcData = qqLyric.yrcData;
@@ -848,7 +867,11 @@ class LyricManager {
    * @param artists 歌曲对应的歌手数组
    * @returns 歌词数据和元数据
    */
-  private async fetchLocalOverrideLyric(id: number, songName?: string, artists?: string[]): Promise<LyricFetchResult & { matchedNcmId?: number }> {
+  private async fetchLocalOverrideLyric(
+    id: number,
+    songName?: string,
+    artists?: string[],
+  ): Promise<LyricFetchResult & { matchedNcmId?: number }> {
     const settingStore = useSettingStore();
     const { localLyricPath } = settingStore;
     const defaultResult: LyricFetchResult & { matchedNcmId?: number } = {
@@ -1153,11 +1176,8 @@ class LyricManager {
           if (isWordLevelFormat(format)) {
             result.yrcData = lines;
           } else {
-            result.lrcData = lines;
             // 应用翻译对齐逻辑
-            const aligned = this.alignLocalLyrics(result);
-            result.lrcData = aligned.lrcData;
-            result.yrcData = aligned.yrcData;
+            result.lrcData = alignLyricLines(lines);
           }
         }
       }
@@ -1235,25 +1255,38 @@ class LyricManager {
         let dirPath = "";
         let fileName = "";
         if (isLocal && isElectron && window.electron?.ipcRenderer) {
-          const lastSlashIndex = Math.max(song.path!.lastIndexOf("/"), song.path!.lastIndexOf("\\"));
+          const lastSlashIndex = Math.max(
+            song.path!.lastIndexOf("/"),
+            song.path!.lastIndexOf("\\"),
+          );
           dirPath = lastSlashIndex >= 0 ? song.path!.substring(0, lastSlashIndex) : "";
           fileName = lastSlashIndex >= 0 ? song.path!.substring(lastSlashIndex + 1) : song.path!;
           try {
-            const localIndex = await window.electron.ipcRenderer.invoke("get-local-match-index", dirPath);
+            const localIndex = await window.electron.ipcRenderer.invoke(
+              "get-local-match-index",
+              dirPath,
+            );
             if (localIndex && fileName in localIndex && localIndex[fileName] !== null) {
               savedNcmId = localIndex[fileName];
             }
-          } catch { }
+          } catch {
+            savedNcmId = undefined;
+          }
           if (!savedNcmId) {
             try {
               const cacheManager = useCacheManager();
-              const cached = await cacheManager.get("lyrics", `ncm-match:${song.path || song.name}`);
+              const cached = await cacheManager.get(
+                "lyrics",
+                `ncm-match:${song.path || song.name}`,
+              );
               if (cached.success && cached.data) {
                 const decoder = new TextDecoder();
                 const parsed = JSON.parse(decoder.decode(cached.data));
                 if (parsed && typeof parsed.ncmId === "number") savedNcmId = parsed.ncmId;
               }
-            } catch { }
+            } catch {
+              savedNcmId = undefined;
+            }
           }
         }
 
@@ -1271,7 +1304,9 @@ class LyricManager {
           if (overrideResult.matchedNcmId) {
             this.saveMatchCache(`ncm-match:${song.path || song.name}`, overrideResult.matchedNcmId);
             if (dirPath && fileName && window.electron?.ipcRenderer) {
-              window.electron.ipcRenderer.invoke("save-local-match-index", dirPath, fileName, overrideResult.matchedNcmId).catch(() => { });
+              window.electron.ipcRenderer
+                .invoke("save-local-match-index", dirPath, fileName, overrideResult.matchedNcmId)
+                .catch(() => {});
             }
           }
         }

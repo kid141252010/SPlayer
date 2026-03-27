@@ -55,7 +55,7 @@ const runToolsJobInWorker = async (payload: Record<string, unknown>) => {
         worker.removeAllListeners("message");
         worker.removeAllListeners("error");
         worker.removeAllListeners("exit");
-        worker.terminate().catch(() => { });
+        worker.terminate().catch(() => {});
       };
 
       worker.once(
@@ -102,7 +102,7 @@ const runToolsJobInWorker = async (payload: Record<string, unknown>) => {
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
     ipcLog.warn(`[AudioAnalysis] 启动分析失败: ${message}`);
-    worker.terminate().catch(() => { });
+    worker.terminate().catch(() => {});
     return null;
   }
 };
@@ -147,7 +147,7 @@ const handleLocalMusicSync = async (
       (current, total) => {
         event.sender.send("music-sync-progress", { current, total });
       },
-      () => { },
+      () => {},
     );
     // 处理音乐封面路径
     const finalTracks = processMusicList(allTracks, coverDir);
@@ -259,9 +259,12 @@ const initFileIpc = (): void => {
   });
 
   // 读取本地歌词
-  ipcMain.handle("read-local-lyric", async (_, lyricDirs: string[], id: number, songName?: string, artists?: string[]) => {
-    return musicMetadataService.readLocalLyric(lyricDirs, id, songName, artists);
-  });
+  ipcMain.handle(
+    "read-local-lyric",
+    async (_, lyricDirs: string[], id: number, songName?: string, artists?: string[]) => {
+      return musicMetadataService.readLocalLyric(lyricDirs, id, songName, artists);
+    },
+  );
 
   // 手动扫描本地 TTML 歌词目录，建立 ncmMusicId 映射缓存
   ipcMain.handle("scan-ttml-lyrics", async (_, lyricDirs: string[]) => {
@@ -274,9 +277,12 @@ const initFileIpc = (): void => {
   });
 
   // 尝试通过歌名快速在本地缓存中寻找对应的 TTML 文件信息并提取其关联的 ncmId
-  ipcMain.handle("match-local-ttml-by-name", async (_, lyricDirs: string[], songName: string, artists?: string[]) => {
-    return matchLocalTtmlByName(lyricDirs, songName, artists);
-  });
+  ipcMain.handle(
+    "match-local-ttml-by-name",
+    async (_, lyricDirs: string[], songName: string, artists?: string[]) => {
+      return matchLocalTtmlByName(lyricDirs, songName, artists);
+    },
+  );
 
   // 删除文件
   ipcMain.handle("delete-file", async (_, path: string) => {
@@ -560,7 +566,9 @@ const initFileIpc = (): void => {
       const dirHash = createHash("md5").update(dirPath).digest("hex");
       const indexPath = join(matchIndexDir, `${dirHash}.json`);
 
-      const exists = await access(indexPath).then(() => true).catch(() => false);
+      const exists = await access(indexPath)
+        .then(() => true)
+        .catch(() => false);
       if (!exists) return {};
 
       const content = await readFile(indexPath, "utf-8");
@@ -583,7 +591,9 @@ const initFileIpc = (): void => {
         let indexData: Record<string, number | null> = {};
 
         // 先尝试读取已有索引
-        const exists = await access(indexPath).then(() => true).catch(() => false);
+        const exists = await access(indexPath)
+          .then(() => true)
+          .catch(() => false);
         if (exists) {
           const content = await readFile(indexPath, "utf-8");
           try {
@@ -604,7 +614,7 @@ const initFileIpc = (): void => {
         ipcLog.error(`Failed to save local match index for ${dirPath}:`, String(e));
         return { success: false, error: String(e) };
       }
-    }
+    },
   );
 };
 

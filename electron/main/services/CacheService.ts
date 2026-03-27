@@ -52,7 +52,7 @@ export class CacheService {
     "list-data": "list-data",
   };
 
-  private constructor() { }
+  private constructor() {}
 
   public static getInstance(): CacheService {
     if (!CacheService.instance) {
