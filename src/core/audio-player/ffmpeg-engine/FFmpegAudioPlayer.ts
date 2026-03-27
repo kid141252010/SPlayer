@@ -122,6 +122,12 @@ export class FFmpegAudioPlayer extends BaseAudioPlayer {
     return 0;
   }
 
+  public getChannels(): number {
+    const channels = this.metadata?.channels ?? 2;
+    console.log(`[FFmpegAudioPlayer] getChannels 返回: ${channels}, metadata:`, this.metadata);
+    return channels;
+  }
+
   private requestWorker<T = void>(
     msg: DistributiveOmit<WorkerRequest, "id">,
     transfer: Transferable[] = [],

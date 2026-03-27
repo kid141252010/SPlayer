@@ -663,6 +663,7 @@ class PlayerController {
     // 加载状态
     audioManager.addEventListener("loadstart", () => {
       statusStore.playLoading = true;
+      statusStore.currentAudioChannels = undefined;
     });
 
     // 加载完成
@@ -670,6 +671,15 @@ class PlayerController {
       const playSongData = getPlaySongData();
       // 结束加载
       statusStore.playLoading = false;
+      // 更新声道数信息
+      statusStore.currentAudioChannels = audioManager.getChannels();
+      // 间隔刷新：兼容不同引擎声道数延迟到达
+      setTimeout(() => {
+        statusStore.currentAudioChannels = audioManager.getChannels();
+      }, 200);
+      setTimeout(() => {
+        statusStore.currentAudioChannels = audioManager.getChannels();
+      }, 600);
       // 恢复 EQ
       if (isElectron && statusStore.eqEnabled) {
         const bands = statusStore.eqBands;
