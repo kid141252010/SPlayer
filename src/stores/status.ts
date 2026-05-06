@@ -8,6 +8,7 @@ import type {
   SortOrder,
   UpdateInfoType,
 } from "@/types/main";
+import type { AudioChannelInfo } from "@/core/audio-player/IPlaybackEngine";
 import type { RepeatModeType, ShuffleModeType } from "@/types/shared/play-mode";
 import { isDevBuild } from "@/utils/env";
 import { defineStore } from "pinia";
@@ -72,6 +73,8 @@ interface StatusState {
   audioSource: AudioSourceType | undefined;
   /** 当前播放音频声道数 */
   currentAudioChannels: number | undefined;
+  /** 当前播放音频声道信息 */
+  currentAudioChannelInfo: AudioChannelInfo | undefined;
   /** 当前播放索引 */
   playIndex: number;
   /** 歌词播放索引 */
@@ -194,6 +197,7 @@ export const useStatusStore = defineStore("status", {
     songQuality: undefined,
     audioSource: undefined,
     currentAudioChannels: undefined,
+    currentAudioChannelInfo: undefined,
     playIndex: -1,
     lyricIndex: -1,
     lyricLoading: false,

@@ -1,5 +1,6 @@
 import { getPlayerInfoObj } from "@/utils/format";
 import type {
+  AudioChannelInfo,
   EngineCapabilities,
   IPlaybackEngine,
   PauseOptions,
@@ -34,6 +35,7 @@ export class MpvPlayer extends EventTarget implements IPlaybackEngine {
   private _rate: number = 1;
   private _errorCode: number = 0;
   private _channels: number = 2;
+  private channelInfoReliable = false;
 
   /** 当前 loadfile 请求期望自动播放 */
   private autoPlayPending: boolean | null = null;
@@ -111,6 +113,7 @@ export class MpvPlayer extends EventTarget implements IPlaybackEngine {
           case "audio-params/channel-count":
             if (typeof value === "number") {
               this._channels = value;
+              this.channelInfoReliable = true;
             }
             break;
         }
@@ -200,6 +203,7 @@ export class MpvPlayer extends EventTarget implements IPlaybackEngine {
       }
       this._src = url;
       this._channels = 2;
+      this.channelInfoReliable = false;
 
       // 设置期望的 seek 位置
       if (options?.seek && options.seek > 0) {
@@ -245,6 +249,7 @@ export class MpvPlayer extends EventTarget implements IPlaybackEngine {
     this._duration = 0;
     this._paused = true;
     this.playbackStarted = false;
+    this.channelInfoReliable = false;
   }
 
   public seek(time: number): void {
@@ -287,6 +292,14 @@ export class MpvPlayer extends EventTarget implements IPlaybackEngine {
 
   public getChannels(): number {
     return this._channels;
+  }
+
+  public getChannelInfo(): AudioChannelInfo {
+    return {
+      channels: this.channelInfoReliable ? this._channels : undefined,
+      source: "mpv",
+      reliable: this.channelInfoReliable,
+    };
   }
 
   // ========== 状态属性 ==========

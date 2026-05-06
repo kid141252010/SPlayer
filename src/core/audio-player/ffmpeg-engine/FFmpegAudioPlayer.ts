@@ -1,7 +1,7 @@
 import { toError } from "@/utils/error";
 import { type GetDetail } from "@/utils/TypedEventTarget";
 import { AudioErrorCode, BaseAudioPlayer, type AudioEventMap } from "../BaseAudioPlayer";
-import { EngineCapabilities } from "../IPlaybackEngine";
+import type { AudioChannelInfo, EngineCapabilities } from "../IPlaybackEngine";
 import FFmpegWorker from "./ffmpeg.worker?worker";
 import { SharedRingBuffer } from "./SharedRingBuffer";
 import type { AudioMetadata, PlayerState, WorkerRequest, WorkerResponse } from "./types";
@@ -126,6 +126,15 @@ export class FFmpegAudioPlayer extends BaseAudioPlayer {
     const channels = this.metadata?.channels ?? 2;
     console.log(`[FFmpegAudioPlayer] getChannels 返回: ${channels}, metadata:`, this.metadata);
     return channels;
+  }
+
+  public getChannelInfo(): AudioChannelInfo {
+    const channels = this.metadata?.channels;
+    return {
+      channels,
+      source: "ffmpeg",
+      reliable: Number.isFinite(channels) && Number(channels) > 0,
+    };
   }
 
   private requestWorker<T = void>(

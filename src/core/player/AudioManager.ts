@@ -5,6 +5,7 @@ import { AudioElementPlayer } from "../audio-player/AudioElementPlayer";
 import { AUDIO_EVENTS, type AudioEventMap } from "../audio-player/BaseAudioPlayer";
 import { FFmpegAudioPlayer } from "../audio-player/ffmpeg-engine/FFmpegAudioPlayer";
 import type {
+  AudioChannelInfo,
   EngineCapabilities,
   FadeCurve,
   IPlaybackEngine,
@@ -472,6 +473,19 @@ class AudioManager extends TypedEventTarget<AudioEventMap> implements IPlaybackE
    */
   public getChannels(): number {
     return this.engine.getChannels?.() ?? 2;
+  }
+
+  /**
+   * 获取音频声道信息
+   */
+  public getChannelInfo(): AudioChannelInfo {
+    const info = this.engine.getChannelInfo?.();
+    if (info) return info;
+    return {
+      channels: this.engine.getChannels?.(),
+      source: this.engineType,
+      reliable: false,
+    };
   }
 
   /**

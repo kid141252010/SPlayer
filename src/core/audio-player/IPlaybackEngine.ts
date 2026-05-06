@@ -30,6 +30,19 @@ export interface AutomationPoint {
 
 export type FadeCurve = "linear" | "exponential" | "equalPower";
 
+/** 音频声道信息来源 */
+export type AudioChannelInfoSource = "element" | "ffmpeg" | "mpv" | "unknown";
+
+/** 音频声道信息 */
+export interface AudioChannelInfo {
+  /** 声道数 */
+  channels?: number;
+  /** 信息来源 */
+  source: AudioChannelInfoSource;
+  /** 是否来自可靠的解码层信息 */
+  reliable: boolean;
+}
+
 /**
  * 播放选项
  */
@@ -221,6 +234,11 @@ export interface IPlaybackEngine {
    * 获取音频声道数
    */
   getChannels?(): number;
+
+  /**
+   * 获取音频声道信息
+   */
+  getChannelInfo?(): AudioChannelInfo;
 
   /**
    * 添加事件监听

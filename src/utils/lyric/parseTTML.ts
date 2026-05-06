@@ -1,4 +1,8 @@
 import type { LyricLine, LyricWord } from "@applemusic-like-lyrics/lyric";
+import type { AudioChannelInfo } from "@/core/audio-player/IPlaybackEngine";
+import type { AudioSourceType, QualityType } from "@/types/main";
+
+export type { AudioChannelInfo };
 
 /** 歌词行归属信息 */
 export type TtmlBgOwnerAnchor = {
@@ -58,17 +62,70 @@ const getRole = (el: Element): string => {
   ).trim();
 };
 
-/**
- * 提取 TTML metadata 中的歌词偏移（毫秒）
- * @param ttml TTML 文本
- * @returns 偏移毫秒，正数延后，负数提前
- */
-export const extractTtmlLyricOffsetMs = (ttml: string): number => {
-  if (!ttml.trim()) return 0;
+/** TTML 空间音频偏移元信息 */
+export type TtmlSpatialOffsetMeta = {
+  /** 是否存在空间音频元数据 */
+  hasSpatialAudio: boolean;
+  /** 偏移毫秒 */
+  offsetMs: number;
+  /** 是否存在可用偏移 */
+  hasValidOffset: boolean;
+  /** 原始偏移值 */
+  rawOffset?: string;
+};
+
+/** TTML 空间音频偏移判定原因 */
+export type TtmlSpatialOffsetReason =
+  | "applied"
+  | "missing-spatial-offset"
+  | "invalid-spatial-offset"
+  | "missing-channel-info"
+  | "unreliable-channel-info"
+  | "stereo-or-mono"
+  | "unsupported-channel-count";
+
+/** TTML 空间音频偏移判定结果 */
+export type TtmlSpatialOffsetDecision = {
+  shouldApply: boolean;
+  offsetMs: number;
+  reason: TtmlSpatialOffsetReason;
+  meta: TtmlSpatialOffsetMeta;
+};
+
+export type ResolveTtmlSpatialOffsetOptions = {
+  ttml: string;
+  channelInfo?: AudioChannelInfo;
+  songQuality?: QualityType;
+  audioSource?: AudioSourceType;
+};
+
+const emptySpatialOffsetMeta = (): TtmlSpatialOffsetMeta => ({
+  hasSpatialAudio: false,
+  offsetMs: 0,
+  hasValidOffset: false,
+});
+
+const parseOffsetSeconds = (rawOffset: string | null): number | null => {
+  if (!rawOffset) return null;
+  const offsetSeconds = Number.parseFloat(rawOffset.trim());
+  if (!Number.isFinite(offsetSeconds)) return null;
+  return Math.round(offsetSeconds * 1000);
+};
+
+const buildSpatialOffsetMeta = (rawOffset: string | null): TtmlSpatialOffsetMeta => {
+  const offsetMs = parseOffsetSeconds(rawOffset);
+  return {
+    hasSpatialAudio: true,
+    offsetMs: offsetMs ?? 0,
+    hasValidOffset: offsetMs !== null,
+    rawOffset: rawOffset ?? undefined,
+  };
+};
+
+const readDocumentSpatialOffsetMeta = (ttml: string): TtmlSpatialOffsetMeta | null => {
+  if (typeof DOMParser === "undefined") return null;
   const doc = new DOMParser().parseFromString(ttml, "application/xml");
-  if (doc.getElementsByTagName("parsererror").length) {
-    return 0;
-  }
+  if (doc.getElementsByTagName("parsererror").length) return emptySpatialOffsetMeta();
 
   const audioNodes = Array.from(doc.getElementsByTagName("audio"));
   for (const audio of audioNodes) {
@@ -87,14 +144,110 @@ export const extractTtmlLyricOffsetMs = (ttml: string): number => {
     }
     if (!inMetadata) continue;
 
-    const rawOffset = audio.getAttribute("lyricOffset");
-    if (!rawOffset) continue;
-    const offsetSeconds = Number.parseFloat(rawOffset.trim());
-    if (!Number.isFinite(offsetSeconds)) continue;
-    return Math.round(offsetSeconds * 1000);
+    return buildSpatialOffsetMeta(audio.getAttribute("lyricOffset"));
   }
 
-  return 0;
+  return emptySpatialOffsetMeta();
+};
+
+const getRawXmlAttribute = (raw: string, name: string): string | null => {
+  const match = raw.match(new RegExp(`(?:^|\\s)(?:[\\w-]+:)?${name}\\s*=\\s*("[^"]*"|'[^']*')`, "i"));
+  if (!match) return null;
+  const quoted = match[1];
+  return quoted.slice(1, -1);
+};
+
+const readTextSpatialOffsetMeta = (ttml: string): TtmlSpatialOffsetMeta => {
+  const metadataBlocks = ttml.match(/<(?:(?:[\w-]+):)?metadata\b[\s\S]*?<\/(?:(?:[\w-]+):)?metadata>/gi);
+  if (!metadataBlocks) return emptySpatialOffsetMeta();
+
+  for (const metadata of metadataBlocks) {
+    const audioTags = metadata.match(/<(?:(?:[\w-]+):)?audio\b[^>]*>/gi);
+    if (!audioTags) continue;
+    for (const audioTag of audioTags) {
+      const role =
+        getRawXmlAttribute(audioTag, "role") || getRawXmlAttribute(audioTag, "ttm:role");
+      if (role !== "spatial") continue;
+      return buildSpatialOffsetMeta(getRawXmlAttribute(audioTag, "lyricOffset"));
+    }
+  }
+
+  return emptySpatialOffsetMeta();
+};
+
+/**
+ * 提取 TTML 空间音频偏移元信息
+ * @param ttml TTML 文本
+ * @returns 偏移元信息
+ */
+export const extractTtmlSpatialOffsetMeta = (ttml: string): TtmlSpatialOffsetMeta => {
+  if (!ttml.trim()) return emptySpatialOffsetMeta();
+  const documentMeta = readDocumentSpatialOffsetMeta(ttml);
+  if (documentMeta) return documentMeta;
+  return readTextSpatialOffsetMeta(ttml);
+};
+
+/**
+ * 提取 TTML metadata 中的歌词偏移（毫秒）
+ * @param ttml TTML 文本
+ * @returns 偏移毫秒，正数延后，负数提前
+ */
+export const extractTtmlLyricOffsetMs = (ttml: string): number => {
+  const meta = extractTtmlSpatialOffsetMeta(ttml);
+  return meta.hasValidOffset ? meta.offsetMs : 0;
+};
+
+/**
+ * 判定是否应用 TTML 空间音频偏移
+ * @param options 判定上下文
+ * @returns 判定结果
+ */
+export const resolveTtmlSpatialOffset = (
+  options: ResolveTtmlSpatialOffsetOptions,
+): TtmlSpatialOffsetDecision => {
+  const meta = extractTtmlSpatialOffsetMeta(options.ttml);
+
+  if (!meta.hasSpatialAudio) {
+    return { shouldApply: false, offsetMs: 0, reason: "missing-spatial-offset", meta };
+  }
+  if (!meta.hasValidOffset) {
+    return { shouldApply: false, offsetMs: 0, reason: "invalid-spatial-offset", meta };
+  }
+
+  const { channelInfo } = options;
+  if (!channelInfo || !Number.isFinite(channelInfo.channels)) {
+    return { shouldApply: false, offsetMs: 0, reason: "missing-channel-info", meta };
+  }
+  if (!channelInfo.reliable) {
+    return { shouldApply: false, offsetMs: 0, reason: "unreliable-channel-info", meta };
+  }
+
+  const channels = Number(channelInfo.channels);
+  if (channels <= 2) {
+    return { shouldApply: false, offsetMs: 0, reason: "stereo-or-mono", meta };
+  }
+  if (channels >= 6) {
+    return { shouldApply: true, offsetMs: meta.offsetMs, reason: "applied", meta };
+  }
+
+  return { shouldApply: false, offsetMs: 0, reason: "unsupported-channel-count", meta };
+};
+
+/**
+ * 按 TTML 空间音频判定结果偏移歌词
+ * @param lines 歌词行
+ * @param options 判定上下文
+ * @returns 偏移后的歌词和判定结果
+ */
+export const applyTtmlSpatialOffsetToLines = (
+  lines: LyricLine[],
+  options: ResolveTtmlSpatialOffsetOptions,
+): { lines: LyricLine[]; decision: TtmlSpatialOffsetDecision } => {
+  const decision = resolveTtmlSpatialOffset(options);
+  return {
+    lines: applyLyricOffsetToLines(lines, decision.offsetMs),
+    decision,
+  };
 };
 
 /**

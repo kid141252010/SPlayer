@@ -4,7 +4,7 @@ import {
   BaseAudioPlayer,
   type AudioEventType,
 } from "./BaseAudioPlayer";
-import type { EngineCapabilities } from "./IPlaybackEngine";
+import type { AudioChannelInfo, EngineCapabilities } from "./IPlaybackEngine";
 import { useSettingStore } from "@/stores";
 
 /**
@@ -249,6 +249,14 @@ export class AudioElementPlayer extends BaseAudioPlayer {
 
   public getChannels(): number {
     return this._channels;
+  }
+
+  public getChannelInfo(): AudioChannelInfo {
+    return {
+      channels: this._channels,
+      source: "element",
+      reliable: false,
+    };
   }
 
   /**
