@@ -70,16 +70,7 @@ class LyricManager {
   constructor() {}
 
   private createTtmlOffsetSignature(decision: TtmlSpatialOffsetDecision): string {
-    const statusStore = useStatusStore();
-    const channelInfo = statusStore.currentAudioChannelInfo;
-    return [
-      decision.shouldApply ? "1" : "0",
-      decision.offsetMs,
-      decision.reason,
-      channelInfo?.source ?? "unknown",
-      channelInfo?.reliable ? "1" : "0",
-      channelInfo?.channels ?? "unknown",
-    ].join(":");
+    return [decision.shouldApply ? "1" : "0", decision.offsetMs].join(":");
   }
 
   private resolveCurrentTtmlOffset(ttml: string): TtmlSpatialOffsetDecision {
@@ -356,7 +347,7 @@ class LyricManager {
     // 最终结果
     const result: SongLyric = { lrcData: [], yrcData: [] };
     // 元数据
-    const meta = {
+    const meta: LyricFetchResult["meta"] = {
       usingTTMLLyric: false,
       usingQRCLyric: false,
     };

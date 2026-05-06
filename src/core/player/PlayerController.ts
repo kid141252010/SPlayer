@@ -664,21 +664,39 @@ class PlayerController {
     audioManager.addEventListener("loadstart", () => {
       statusStore.playLoading = true;
       statusStore.currentAudioChannels = undefined;
+      statusStore.currentAudioChannelInfo = undefined;
     });
 
     // 加载完成
     audioManager.addEventListener("canplay", () => {
       const playSongData = getPlaySongData();
+      const lyricManager = useLyricManager();
+      let ttmlOffsetRefreshPending = false;
+      const syncChannelInfo = () => {
+        if (!playSongData || musicStore.playSong?.id !== playSongData.id) return;
+        const channelInfo = audioManager.getChannelInfo();
+        statusStore.currentAudioChannelInfo = channelInfo;
+        statusStore.currentAudioChannels = channelInfo.channels ?? audioManager.getChannels();
+        if (!ttmlOffsetRefreshPending && lyricManager.shouldRefreshTtmlOffset()) {
+          ttmlOffsetRefreshPending = true;
+          lyricManager
+            .handleLyric(playSongData)
+            .catch(() => {})
+            .finally(() => {
+              ttmlOffsetRefreshPending = false;
+            });
+        }
+      };
       // 结束加载
       statusStore.playLoading = false;
       // 更新声道数信息
-      statusStore.currentAudioChannels = audioManager.getChannels();
+      syncChannelInfo();
       // 间隔刷新：兼容不同引擎声道数延迟到达
       setTimeout(() => {
-        statusStore.currentAudioChannels = audioManager.getChannels();
+        syncChannelInfo();
       }, 200);
       setTimeout(() => {
-        statusStore.currentAudioChannels = audioManager.getChannels();
+        syncChannelInfo();
       }, 600);
       // 恢复 EQ
       if (isElectron && statusStore.eqEnabled) {
