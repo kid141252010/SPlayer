@@ -3,6 +3,7 @@ import { type GetDetail } from "@/utils/TypedEventTarget";
 import { AudioErrorCode, BaseAudioPlayer, type AudioEventMap } from "../BaseAudioPlayer";
 import type { AudioChannelInfo, EngineCapabilities } from "../IPlaybackEngine";
 import FFmpegWorker from "./ffmpeg.worker?worker";
+import { clampPlaybackTime, shouldDispatchFfmpegEnded } from "./playbackState";
 import { SharedRingBuffer } from "./SharedRingBuffer";
 import type { AudioMetadata, PlayerState, WorkerRequest, WorkerResponse } from "./types";
 
@@ -32,6 +33,8 @@ export class FFmpegAudioPlayer extends BaseAudioPlayer {
   private isWorkerPaused = false;
   /** 当前正在播放的 AudioBufferSourceNode 实例 */
   private activeSources: AudioBufferSourceNode[] = [];
+  /** Source 代际号，用于忽略 stop/seek 后的旧回调 */
+  private sourceGeneration = 0;
   /** 解码是否已完成 */
   private isDecodingFinished = false;
   /** 当前播放速率 */
@@ -98,7 +101,7 @@ export class FFmpegAudioPlayer extends BaseAudioPlayer {
     if (!this.audioCtx) return 0;
     const wallDelta = this.audioCtx.currentTime - this.anchorWallTime;
     const currentPosition = this.anchorSourceTime + wallDelta * this.currentTempo;
-    return Math.max(0, currentPosition);
+    return clampPlaybackTime(currentPosition, this.duration);
   }
 
   public get audioInfo() {
@@ -358,6 +361,19 @@ export class FFmpegAudioPlayer extends BaseAudioPlayer {
     }
   }
 
+  public override stop(): void {
+    this.stopTimeUpdate();
+    this.stopActiveSources();
+    this.isDecodingFinished = false;
+    this.isPendingSeek = false;
+    if (this.audioCtx) {
+      const now = this.audioCtx.currentTime;
+      this.nextStartTime = now;
+      this.syncTimeAnchor(now, 0);
+    }
+    Promise.resolve(this.doPause()).catch(() => {});
+  }
+
   protected async doSeek(time: number): Promise<void> {
     if (!this.worker) return;
     this.dispatch("seeking");
@@ -563,7 +579,11 @@ export class FFmpegAudioPlayer extends BaseAudioPlayer {
 
     this.activeSources.push(source);
 
+    const generation = this.sourceGeneration;
+
     source.onended = () => {
+      if (generation !== this.sourceGeneration) return;
+
       const index = this.activeSources.indexOf(source);
       if (index !== -1) {
         this.activeSources.splice(index, 1);
@@ -593,10 +613,15 @@ export class FFmpegAudioPlayer extends BaseAudioPlayer {
   }
 
   private checkIfEnded() {
-    if (this.state !== "playing") return;
-    if (this.activeSources.length > 0) return;
-    if (!this.isDecodingFinished) return;
+    const shouldEnd = shouldDispatchFfmpegEnded({
+      state: this.state,
+      activeSourceCount: this.activeSources.length,
+      isDecodingFinished: this.isDecodingFinished,
+      currentTime: this.currentTime,
+      duration: this.duration,
+    });
 
+    if (!shouldEnd) return;
     this.dispatch("ended");
   }
 
@@ -606,14 +631,16 @@ export class FFmpegAudioPlayer extends BaseAudioPlayer {
   }
 
   private stopActiveSources() {
-    this.activeSources.forEach((source) => {
+    this.sourceGeneration += 1;
+    const sources = this.activeSources;
+    this.activeSources = [];
+    sources.forEach((source) => {
       try {
         source.stop();
       } catch {
         // ignore
       }
     });
-    this.activeSources = [];
   }
 
   private startTimeUpdate() {
@@ -621,6 +648,7 @@ export class FFmpegAudioPlayer extends BaseAudioPlayer {
     this.timeUpdateIntervalId = setInterval(() => {
       if (this.state === "playing") {
         this.dispatch("timeupdate");
+        this.checkIfEnded();
       }
     }, 250);
   }

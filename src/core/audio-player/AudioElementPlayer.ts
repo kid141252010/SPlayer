@@ -107,7 +107,6 @@ export class AudioElementPlayer extends BaseAudioPlayer {
     this.isInternalSeeking = true;
     this.targetSeekTime = time;
 
-    this.cancelPendingPause();
     this.doSeek(time);
   }
 

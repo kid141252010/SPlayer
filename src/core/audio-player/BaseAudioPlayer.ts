@@ -2,8 +2,8 @@ import { useSettingStore } from "@/stores";
 import { TypedEventTarget } from "@/utils/TypedEventTarget";
 import type { IExtendedAudioContext } from "@/types/audio/context";
 import { AudioEffectManager } from "./AudioEffectManager";
-import type { EngineCapabilities, IPlaybackEngine, FadeCurve } from "./IPlaybackEngine";
-import { getSharedAudioContext, getSharedMasterInput } from "../automix/SharedAudioContext";
+import type { EngineCapabilities, IPlaybackEngine } from "./IPlaybackEngine";
+import { getSharedAudioContext, getSharedMasterInput } from "./SharedAudioContext";
 
 export interface AudioErrorDetail {
   originalEvent: Event;
@@ -52,7 +52,7 @@ const SEEK_FADE_TIME = 0.05;
 /**
  * 音频播放器抽象基类
  *
- * 管理 AudioContext、音量增益、EQ连接、以及通用的淡入淡出/Seek逻辑
+ * 管理 AudioContext、音量增益、EQ连接、以及通用 Seek 逻辑
  * 实现 IPlaybackEngine 接口
  */
 export abstract class BaseAudioPlayer
@@ -79,9 +79,6 @@ export abstract class BaseAudioPlayer
   protected volume: number = 1;
   /** ReplayGain 增益 (1.0 = 0dB) */
   protected replayGain: number = 1.0;
-  /** 存储淡出暂停的定时器 ID */
-  private fadeTimer: ReturnType<typeof setTimeout> | null = null;
-
   /** 引擎能力描述 */
   public abstract readonly capabilities: EngineCapabilities;
 
@@ -168,14 +165,10 @@ export abstract class BaseAudioPlayer
   public async play(
     url?: string,
     options: {
-      fadeIn?: boolean;
-      fadeDuration?: number;
-      fadeCurve?: FadeCurve;
       autoPlay?: boolean;
       seek?: number;
     } = {},
   ) {
-    this.cancelPendingPause();
     const shouldPlay = options.autoPlay ?? true;
 
     if (url) {
@@ -195,14 +188,7 @@ export abstract class BaseAudioPlayer
       await this.audioCtx.resume();
     }
 
-    const duration = options.fadeIn ? (options.fadeDuration ?? 0.5) : 0;
-
-    // 修复：如果是渐入，强制从 0 开始
-    if (duration > 0 && this.gainNode && this.audioCtx) {
-      this.gainNode.gain.setValueAtTime(0, this.audioCtx.currentTime);
-    }
-
-    this.applyFadeTo(this.volume * this.replayGain, duration, options.fadeCurve);
+    this.applyFadeTo(this.volume * this.replayGain, 0);
 
     try {
       await this.doPlay();
@@ -212,48 +198,19 @@ export abstract class BaseAudioPlayer
     }
   }
 
-  public async resume(options?: {
-    fadeIn?: boolean;
-    fadeDuration?: number;
-    fadeCurve?: FadeCurve;
-  }): Promise<void> {
-    await this.play(undefined, options);
+  public async resume(): Promise<void> {
+    await this.play();
   }
 
-  public async pause(
-    options: {
-      fadeOut?: boolean;
-      fadeDuration?: number;
-      fadeCurve?: FadeCurve;
-      keepContextRunning?: boolean;
-    } = {},
-  ) {
-    this.cancelPendingPause();
+  public async pause() {
+    await this.doPause();
 
-    const duration = options.fadeOut ? (options.fadeDuration ?? 0.5) : 0;
-
-    const performPause = async () => {
-      await this.doPause();
-
-      if (this.audioCtx && this.audioCtx.state === "running" && !options.keepContextRunning) {
-        try {
-          await this.audioCtx.suspend();
-        } catch (e) {
-          console.warn("挂起 AudioContext 失败", e);
-        }
+    if (this.audioCtx && this.audioCtx.state === "running") {
+      try {
+        await this.audioCtx.suspend();
+      } catch (e) {
+        console.warn("挂起 AudioContext 失败", e);
       }
-
-      this.fadeTimer = null;
-    };
-
-    if (duration > 0) {
-      this.applyFadeTo(0, duration, options.fadeCurve);
-
-      this.fadeTimer = setTimeout(() => {
-        performPause();
-      }, duration * 1000);
-    } else {
-      await performPause();
     }
   }
 
@@ -262,7 +219,6 @@ export abstract class BaseAudioPlayer
    * @param time 目标时间 (秒)
    */
   public async seek(time: number, immediate = false) {
-    this.cancelPendingPause();
     // 如果已经暂停，直接跳转
     if (this.paused) {
       this.doSeek(time);
@@ -287,9 +243,8 @@ export abstract class BaseAudioPlayer
    * 停止播放并重置
    */
   public stop() {
-    this.cancelPendingPause();
     // 捕获可能产生的异步错误
-    Promise.resolve(this.pause({ fadeOut: false })).catch(() => {});
+    Promise.resolve(this.pause()).catch(() => {});
     Promise.resolve(this.doSeek(0)).catch(() => {});
   }
 
@@ -313,11 +268,6 @@ export abstract class BaseAudioPlayer
     this.applyFadeTo(this.volume * this.replayGain, 0);
   }
 
-  public rampVolumeTo(value: number, duration: number, curve?: FadeCurve) {
-    this.volume = Math.max(0, Math.min(1, value));
-    this.applyFadeTo(this.volume * this.replayGain, duration, curve);
-  }
-
   /**
    * 设置 ReplayGain 增益
    * @param gain 线性增益值
@@ -339,9 +289,8 @@ export abstract class BaseAudioPlayer
    * 应用音量渐变
    * @param targetValue 目标音量
    * @param duration 持续时间 (秒)
-   * @param curve 渐变曲线
    */
-  protected applyFadeTo(targetValue: number, duration: number, curve: FadeCurve = "linear") {
+  protected applyFadeTo(targetValue: number, duration: number) {
     if (!this.gainNode || !this.audioCtx) return;
 
     const currentTime = this.audioCtx.currentTime;
@@ -366,39 +315,7 @@ export abstract class BaseAudioPlayer
     const safeStartTime = currentTime + 0.02;
     this.gainNode.gain.setValueAtTime(currentValue, safeStartTime);
 
-    if (curve === "equalPower") {
-      const steps = Math.max(2, Math.floor(duration * 60));
-      const curveData = new Float32Array(steps);
-
-      for (let i = 0; i < steps; i++) {
-        const t = i / (steps - 1);
-        let val = 0;
-
-        if (targetValue > currentValue) {
-          const factor = Math.sin((t * Math.PI) / 2);
-          val = currentValue + (targetValue - currentValue) * factor;
-        } else {
-          const factor = Math.cos((t * Math.PI) / 2);
-          val = targetValue + (currentValue - targetValue) * factor;
-        }
-        curveData[i] = val;
-      }
-      this.gainNode.gain.setValueCurveAtTime(curveData, safeStartTime, duration);
-    } else if (curve === "exponential") {
-      let safeTarget = targetValue;
-      if (safeTarget <= 0.001) safeTarget = 0.001;
-
-      if (currentValue < 0.001) {
-        this.gainNode.gain.linearRampToValueAtTime(targetValue, safeStartTime + duration);
-      } else {
-        this.gainNode.gain.exponentialRampToValueAtTime(safeTarget, safeStartTime + duration);
-        if (targetValue === 0) {
-          this.gainNode.gain.setValueAtTime(0, safeStartTime + duration);
-        }
-      }
-    } else {
-      this.gainNode.gain.linearRampToValueAtTime(targetValue, safeStartTime + duration);
-    }
+    this.gainNode.gain.linearRampToValueAtTime(targetValue, safeStartTime + duration);
   }
 
   /**
@@ -417,17 +334,6 @@ export abstract class BaseAudioPlayer
     }
     // 回退逻辑由子类实现，例如设置 HTMLAudioElement.setSinkId
     await this.doSetSinkId(deviceId);
-  }
-
-  /**
-   * 取消正在进行的暂停计划
-   * 用于在淡出期间点击了播放或跳转，取消之前的暂停指令
-   */
-  protected cancelPendingPause() {
-    if (this.fadeTimer) {
-      clearTimeout(this.fadeTimer);
-      this.fadeTimer = null;
-    }
   }
 
   /** 获取频率数据 */

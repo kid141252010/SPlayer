@@ -21,15 +21,6 @@ export interface AudioErrorDetail {
   message?: string;
 }
 
-export interface AutomationPoint {
-  timeOffset: number;
-  volume: number;
-  lowCut: number;
-  highCut: number;
-}
-
-export type FadeCurve = "linear" | "exponential" | "equalPower";
-
 /** 音频声道信息来源 */
 export type AudioChannelInfoSource = "element" | "ffmpeg" | "mpv" | "unknown";
 
@@ -49,28 +40,8 @@ export interface AudioChannelInfo {
 export interface PlayOptions {
   /** 是否自动播放 */
   autoPlay?: boolean;
-  /** 是否渐入 */
-  fadeIn?: boolean;
-  /** 渐入时长（秒） */
-  fadeDuration?: number;
-  /** 淡入曲线类型 */
-  fadeCurve?: FadeCurve;
   /** 初始播放位置（秒） */
   seek?: number;
-}
-
-/**
- * 暂停选项
- */
-export interface PauseOptions {
-  /** 是否渐出 */
-  fadeOut?: boolean;
-  /** 渐出时长（秒） */
-  fadeDuration?: number;
-  /** 淡出曲线类型 */
-  fadeCurve?: FadeCurve;
-  /** 是否保持 Context 运行（用于 Crossfade） */
-  keepContextRunning?: boolean;
 }
 
 /**
@@ -91,15 +62,13 @@ export interface IPlaybackEngine {
 
   /**
    * 恢复播放
-   * @param options 播放选项
    */
-  resume(options?: { fadeIn?: boolean; fadeDuration?: number }): Promise<void>;
+  resume(): Promise<void>;
 
   /**
    * 暂停播放
-   * @param options 暂停选项
    */
-  pause(options?: PauseOptions): void;
+  pause(): void;
 
   /** 停止播放并重置进度 */
   stop(): void;
@@ -129,8 +98,6 @@ export interface IPlaybackEngine {
    * @param value 音量值 (0.0 - 1.0)
    */
   setVolume(value: number): void;
-
-  rampVolumeTo?(value: number, duration: number, curve?: FadeCurve): void;
 
   /**
    * 获取当前音量

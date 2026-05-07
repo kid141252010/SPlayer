@@ -3,7 +3,6 @@ import type {
   AudioChannelInfo,
   EngineCapabilities,
   IPlaybackEngine,
-  PauseOptions,
   PlayOptions,
 } from "./IPlaybackEngine";
 
@@ -223,22 +222,16 @@ export class MpvPlayer extends EventTarget implements IPlaybackEngine {
       return;
     } else {
       // 恢复播放
-      await this.resume(options);
+      await this.resume();
     }
   }
 
-  public async resume(options?: { fadeIn?: boolean; fadeDuration?: number }): Promise<void> {
-    // MPV 不支持渐入渐出，忽略 options
-    void options;
-
+  public async resume(): Promise<void> {
     this.forcePaused = false;
     window.electron.ipcRenderer.send("mpv-resume");
   }
 
-  public pause(options?: PauseOptions): void {
-    // MPV 不支持渐入渐出，忽略 options
-    void options;
-
+  public pause(): void {
     window.electron.ipcRenderer.send("mpv-pause");
   }
 
