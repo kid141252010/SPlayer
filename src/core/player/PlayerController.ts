@@ -3,7 +3,6 @@ import { AudioErrorCode } from "@/core/audio-player/BaseAudioPlayer";
 import { useDataStore, useMusicStore, useSettingStore, useStatusStore } from "@/stores";
 import type { AudioSourceType, QualityType, SongType } from "@/types/main";
 import type { RepeatModeType, ShuffleModeType } from "@/types/shared/play-mode";
-import { type AudioAnalysis } from "@/types/audio/automix";
 import { calculateLyricIndex } from "@/utils/calc";
 import { getCoverColor } from "@/utils/color";
 import { isElectron, isMac } from "@/utils/env";
@@ -16,7 +15,6 @@ import type { LyricLine } from "@applemusic-like-lyrics/lyric";
 import { type DebouncedFunc, throttle } from "lodash-es";
 import { useBlobURLManager } from "../resource/BlobURLManager";
 import { useAudioManager } from "./AudioManager";
-import { useAutomixManager } from "@/core/automix/AutomixManager";
 import { useLyricManager } from "./LyricManager";
 import { mediaSessionManager } from "./MediaSessionManager";
 import * as playerIpc from "./PlayerIpc";
@@ -38,27 +36,12 @@ class PlayerController {
   public currentRequestToken = 0;
   /** 连续跳过计数 */
   private failSkipCount = 0;
-  /** 是否正在进行 Automix 过渡 */
-  public isTransitioning = false;
   /** 负责管理播放模式相关的逻辑 */
   private playModeManager = new PlayModeManager();
   /** 播放进度更新回调 */
   private onTimeUpdate: DebouncedFunc<() => void> | null = null;
   /** 上次错误处理时间 */
   private lastErrorTime = 0;
-  /** 当前歌曲分析结果 */
-  public currentAnalysis: AudioAnalysis | null = null;
-  public currentAnalysisKey: string | null = null;
-  public currentAnalysisKind: "none" | "head" | "full" = "none";
-  public currentAudioSource: {
-    url: string;
-    quality: QualityType | undefined;
-    source: AudioSourceType | undefined;
-  } | null = null;
-  /** 速率重置定时器 */
-  private rateResetTimer: ReturnType<typeof setTimeout> | undefined;
-  /** 速率渐变动画帧 */
-  private rateRampFrame: number | undefined;
 
   constructor() {
     // 初始化 AudioManager（会根据设置自动选择引擎）
@@ -82,7 +65,6 @@ class PlayerController {
     const musicStore = useMusicStore();
     const settingStore = useSettingStore();
     const audioManager = useAudioManager();
-    const automixManager = useAutomixManager();
     if (!settingStore.enableReplayGain) {
       if (apply) audioManager.setReplayGain(1);
       return 1;
@@ -104,8 +86,6 @@ class PlayerController {
     // 简单防削波保护
     const peak =
       settingStore.replayGainMode === "album" ? (albumPeak ?? trackPeak) : (trackPeak ?? albumPeak);
-    // 应用 Automix 增益
-    targetGain *= automixManager.automixGain;
     if (peak && peak > 0) {
       if (targetGain * peak > 1.0) {
         targetGain = 1.0 / peak;
@@ -119,29 +99,21 @@ class PlayerController {
   }
 
   /**
-   * 准备音频源与分析数据
+   * 准备音频源
    * @param song - 歌曲
    * @param requestToken - 请求标识
-   * @param options - 配置
-   * @param options.forceCacheForOnline - 是否强制缓存在线歌曲
-   * @param options.analysis - 分析模式
    */
   public async prepareAudioSource(
     song: SongType,
     requestToken: number,
-    options?: { forceCacheForOnline?: boolean; analysis?: "none" | "head" | "full" },
   ): Promise<{
     audioSource: {
       url: string;
       quality: QualityType | undefined;
       source: AudioSourceType | undefined;
     };
-    analysis: AudioAnalysis | null;
-    analysisKind: "none" | "head" | "full";
   }> {
     const songManager = useSongManager();
-    const automixManager = useAutomixManager();
-    const settingStore = useSettingStore();
     const audioSource = await songManager.getAudioSource(song);
     // 检查请求是否过期
     if (requestToken !== this.currentRequestToken) {
@@ -155,32 +127,7 @@ class PlayerController {
       quality: audioSource.quality,
       source: audioSource.source,
     };
-    // Automix: 缓存保障与特征分析
-    let analysis: AudioAnalysis | null = null;
-    let analysisKind: "none" | "head" | "full" = "none";
-    if (settingStore.enableAutomix) {
-      if (options?.forceCacheForOnline) {
-        safeAudioSource.url = await automixManager.ensureAutomixAudioSource(
-          song,
-          safeAudioSource.url,
-          safeAudioSource.quality,
-        );
-        if (requestToken !== this.currentRequestToken) throw new Error("EXPIRED");
-      }
-      this.currentAudioSource = safeAudioSource;
-      // Automix: 特征分析
-      const analysisKey = song.path || automixManager.fileUrlToPath(safeAudioSource.url);
-      this.currentAnalysisKey = analysisKey;
-      const analysisMode = options?.analysis ?? "full";
-      const result = await automixManager.fetchAudioAnalysis(analysisKey, analysisMode);
-      analysis = result.analysis;
-      analysisKind = result.analysisKind;
-
-      if (requestToken !== this.currentRequestToken) throw new Error("EXPIRED");
-    } else {
-      this.currentAudioSource = safeAudioSource;
-    }
-    return { audioSource: safeAudioSource, analysis, analysisKind };
+    return { audioSource: safeAudioSource };
   }
 
   /**
@@ -226,7 +173,7 @@ class PlayerController {
       artist: artist || "",
       cover: coverUrl,
     });
-    // 主动通知桌面歌词和 macOS 状态栏歌词 确保 AutoMix 平滑过渡时也触发更新
+    // 主动通知桌面歌词和 macOS 状态栏歌词
     if (isElectron) {
       const playTitle = `${name} - ${artist}`;
       playerIpc.sendSongChange(playTitle, name || "", artist || "", album || "");
@@ -252,18 +199,11 @@ class PlayerController {
     options: {
       autoPlay?: boolean;
       seek?: number;
-      crossfade?: boolean;
-      crossfadeDuration?: number;
       song?: SongType;
     } = { autoPlay: true, seek: 0 },
   ) {
     const statusStore = useStatusStore();
     const audioManager = useAudioManager();
-    // 重置过渡状态
-    this.isTransitioning = false;
-    useAutomixManager().resetNextAnalysisCache();
-    this.currentAnalysisKey = null;
-    this.currentAudioSource = null;
     // 生成新的请求标识
     this.currentRequestToken++;
     const requestToken = this.currentRequestToken;
@@ -284,39 +224,13 @@ class PlayerController {
       return;
     }
     try {
-      // 立即停止当前播放 (除非是 Crossfade)
+      // 立即停止当前播放
       statusStore.playLoading = true;
-      if (!options.crossfade) {
-        audioManager.stop();
-      }
+      audioManager.stop();
       // 立即更新 UI（歌曲信息、封面、歌词等），无需等待网络请求
       this.setupSongUI(playSongData, seek);
-      const { audioSource, analysis, analysisKind } = await this.prepareAudioSource(
-        playSongData,
-        requestToken,
-        { analysis: options.crossfade ? "head" : "none" },
-      );
+      const { audioSource } = await this.prepareAudioSource(playSongData, requestToken);
       if (requestToken !== this.currentRequestToken) return;
-      // Automix 分析应用
-      const lastAnalysis = this.currentAnalysis;
-      this.currentAnalysis = analysis;
-      this.currentAnalysisKind = analysis ? analysisKind : "none";
-
-      let startSeek = seek ?? 0;
-      let initialRate = 1.0;
-      const settingStore = useSettingStore();
-      // Automix 参数计算
-      if (settingStore.enableAutomix) {
-        const automixManager = useAutomixManager();
-        const automixParams = automixManager.calculateInitialAutomixParameters(
-          analysis,
-          lastAnalysis,
-          options,
-          startSeek,
-        );
-        startSeek = automixParams.startSeek;
-        initialRate = automixParams.initialRate;
-      }
       if (requestToken !== this.currentRequestToken) return;
       // 更新音质和音源信息
       console.log(`🎧 [${playSongData.id}] 最终播放信息:`, audioSource);
@@ -326,9 +240,7 @@ class PlayerController {
       await this.loadAndPlay(
         audioSource.url,
         autoPlay,
-        startSeek,
-        options.crossfade ? { duration: options.crossfadeDuration ?? 5 } : undefined,
-        initialRate,
+        seek ?? 0,
       );
       if (requestToken !== this.currentRequestToken) return;
       // 后置处理
@@ -427,55 +339,23 @@ class PlayerController {
    * @param url 音频流 URL
    * @param autoPlay 是否自动播放
    * @param seek 开始播放时间
-   * @param crossfadeOptions 淡入淡出配置
-   * @param initialRate 初始播放速率
    */
   public async loadAndPlay(
     url: string,
     autoPlay: boolean,
     seek: number,
-    crossfadeOptions?: {
-      duration: number;
-      uiSwitchDelay?: number;
-      onSwitch?: () => void;
-      deferStateSync?: boolean;
-      mixType?: "default" | "bassSwap";
-      replayGain?: number;
-    },
-    initialRate: number = 1.0,
   ) {
     const statusStore = useStatusStore();
     const settingStore = useSettingStore();
     const audioManager = useAudioManager();
-    // 重置速率定时器
-    if (this.rateResetTimer) {
-      clearTimeout(this.rateResetTimer);
-      this.rateResetTimer = undefined;
-    }
-    // 重置速率帧
-    if (this.rateRampFrame) {
-      cancelAnimationFrame(this.rateRampFrame);
-      this.rateRampFrame = undefined;
-    }
     // 设置基础参数
     audioManager.setVolume(statusStore.playVolume);
     // 仅当引擎支持倍速时设置
     if (audioManager.capabilities.supportsRate) {
-      const baseRate = statusStore.playRate;
-      // 仅在非 Crossfade 时直接设置速率，否则会导致上一首歌变调
-      if (!crossfadeOptions) {
-        audioManager.setRate(baseRate * initialRate);
-      }
-      // 安排速率重置
-      if (initialRate !== 1.0 && crossfadeOptions) {
-        this.rateResetTimer = setTimeout(() => {
-          this.rampRateTo(baseRate, 2000);
-        }, crossfadeOptions.duration * 1000);
-      }
+      audioManager.setRate(statusStore.playRate);
     }
     // 应用 ReplayGain
-    const replayGain =
-      crossfadeOptions?.replayGain ?? this.applyReplayGain(undefined, !crossfadeOptions);
+    this.applyReplayGain();
     // 切换输出设备（非 MPV 引擎且未开启频谱时）
     if (audioManager.engineType !== "mpv" && !settingStore.showSpectrums) {
       this.toggleOutputDevice();
@@ -492,42 +372,15 @@ class PlayerController {
         }
         return duration;
       };
-      const shouldDeferStateSync = !!(crossfadeOptions?.deferStateSync && autoPlay);
       // 设置期望的 seek 位置（MPV 引擎特有）
       if (seek > 0) audioManager.setPendingSeek(seek / 1000);
-      if (crossfadeOptions) {
-        const onSwitch = crossfadeOptions.onSwitch;
-        const wrappedOnSwitch = shouldDeferStateSync
-          ? () => {
-              onSwitch?.();
-              updateSeekState();
-            }
-          : onSwitch;
-        await audioManager.crossfadeTo(url, {
-          duration: crossfadeOptions.duration,
-          seek: seek / 1000,
-          autoPlay,
-          uiSwitchDelay: crossfadeOptions.uiSwitchDelay,
-          onSwitch: wrappedOnSwitch,
-          mixType: crossfadeOptions.mixType,
-          rate: audioManager.capabilities.supportsRate
-            ? statusStore.playRate * initialRate
-            : undefined,
-          replayGain,
-        });
-      } else {
-        // 计算渐入时间
-        const fadeTime = settingStore.getFadeTime ? settingStore.getFadeTime / 1000 : 0;
-        await audioManager.play(url, {
-          fadeIn: !!fadeTime,
-          fadeDuration: fadeTime,
-          autoPlay,
-          seek: seek / 1000,
-        });
-      }
+      await audioManager.play(url, {
+        autoPlay,
+        seek: seek / 1000,
+      });
 
       // 更新进度到状态
-      const duration = !crossfadeOptions || !shouldDeferStateSync ? updateSeekState() : 0;
+      const duration = updateSeekState();
 
       // 如果不自动播放，设置任务栏暂停状态
       if (!autoPlay) {
@@ -546,30 +399,6 @@ class PlayerController {
       console.error("❌ 音频播放失败:", error);
       throw error;
     }
-  }
-
-  /**
-   * 平滑过渡播放速率
-   */
-  private rampRateTo(targetRate: number, duration: number) {
-    const audioManager = useAudioManager();
-    const startRate = audioManager.getRate();
-    const startTime = Date.now();
-
-    const tick = () => {
-      const now = Date.now();
-      const progress = Math.min((now - startTime) / duration, 1.0);
-      const current = startRate + (targetRate - startRate) * progress;
-      audioManager.setRate(current);
-
-      if (progress < 1.0) {
-        this.rateRampFrame = requestAnimationFrame(tick);
-      } else {
-        this.rateRampFrame = undefined;
-        this.rateResetTimer = undefined;
-      }
-    };
-    this.rateRampFrame = requestAnimationFrame(tick);
   }
 
   /**
@@ -738,7 +567,6 @@ class PlayerController {
     // 暂停
     audioManager.addEventListener("pause", () => {
       statusStore.playStatus = false;
-      useAutomixManager().resetAutomixScheduling("IDLE");
       playerIpc.sendMediaPlayState("Paused");
       mediaSessionManager.updatePlaybackStatus(false);
       if (!isElectron) window.document.title = "SPlayer";
@@ -749,14 +577,8 @@ class PlayerController {
       lastfmScrobbler.pause();
       console.log(`⏸️ [${musicStore.playSong?.id}] 歌曲暂停`);
     });
-    // 拖动进度条
-    audioManager.addEventListener("seeking", () => {
-      useAutomixManager().resetAutomixScheduling("MONITORING");
-    });
     // 播放结束
     audioManager.addEventListener("ended", () => {
-      if (this.isTransitioning) return;
-      useAutomixManager().resetAutomixScheduling("IDLE");
       console.log(`⏹️ [${musicStore.playSong?.id}] 歌曲结束`);
       lastfmScrobbler.stop();
       // 检查定时关闭
@@ -776,7 +598,6 @@ class PlayerController {
       const rawTime = audioManager.currentTime;
       const currentTime = Math.floor(rawTime * 1000);
       const duration = Math.floor(audioManager.duration * 1000) || statusStore.duration;
-      useAutomixManager().updateAutomixMonitoring();
       // 计算歌词索引
       const songId = musicStore.playSong?.id;
       const offset = statusStore.getSongOffset(songId);
@@ -945,7 +766,6 @@ class PlayerController {
   /** 播放 */
   async play() {
     const statusStore = useStatusStore();
-    const settingStore = useSettingStore();
     const audioManager = useAudioManager();
     // 如果已经在播放，直接返回
     if (statusStore.playStatus) return;
@@ -964,9 +784,8 @@ class PlayerController {
       statusStore.playStatus = true;
       return;
     }
-    const fadeTime = settingStore.getFadeTime ? settingStore.getFadeTime / 1000 : 0;
     try {
-      await audioManager.resume({ fadeIn: !!fadeTime, fadeDuration: fadeTime });
+      await audioManager.resume();
       statusStore.playStatus = true;
     } catch (error) {
       console.error("❌ 播放失败:", error);
@@ -980,11 +799,8 @@ class PlayerController {
   /** 暂停 */
   async pause(changeStatus: boolean = true) {
     const statusStore = useStatusStore();
-    const settingStore = useSettingStore();
     const audioManager = useAudioManager();
-    // 计算渐出时间
-    const fadeTime = settingStore.getFadeTime ? settingStore.getFadeTime / 1000 : 0;
-    audioManager.pause({ fadeOut: !!fadeTime, fadeDuration: fadeTime });
+    audioManager.pause();
 
     if (changeStatus) statusStore.playStatus = false;
   }

@@ -36,10 +36,6 @@ export default defineConfig(({ mode }) => {
         rollupOptions: {
           input: {
             index: resolve(__dirname, "electron/main/index.ts"),
-            "workers/audio-analysis.worker": resolve(
-              __dirname,
-              "electron/main/workers/audio-analysis.worker.ts",
-            ),
           },
         },
       },

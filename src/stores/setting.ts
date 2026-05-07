@@ -160,10 +160,6 @@ export interface SettingState {
   autoPlay: boolean;
   /** 预载下一首 */
   useNextPrefetch: boolean;
-  /** 渐入渐出 */
-  songVolumeFade: boolean;
-  /** 渐入渐出时间 */
-  songVolumeFadeTime: number;
   /** 是否启用 ReplayGain (音量平衡) */
   enableReplayGain: boolean;
   /** ReplayGain 模式: 轨道增益 (track) 或 专辑增益 (album) */
@@ -474,10 +470,6 @@ export interface SettingState {
   disableDjMode: boolean;
   /** 拒绝胎教: 开启后屏蔽 TTML 歌词中的汉语拼音音译 */
   blockPinyinLyric: boolean;
-  /** 启用自动混音 */
-  enableAutomix: boolean;
-  /** 自动混音最大分析时间 (秒) */
-  automixMaxAnalyzeTime: number;
   /** 启用全局错误弹窗 */
   enableGlobalErrorDialog: boolean;
   /** macOS 专属设置 */
@@ -527,8 +519,6 @@ export const useSettingStore = defineStore("setting", {
     audioLatencyHint: "interactive",
     autoPlay: false,
     useNextPrefetch: true,
-    songVolumeFade: true,
-    songVolumeFadeTime: 300,
     enableReplayGain: false,
     replayGainMode: "track",
     useSongUnlock: true,
@@ -753,8 +743,6 @@ export const useSettingStore = defineStore("setting", {
     disableAiAudio: false,
     disableDjMode: false,
     blockPinyinLyric: false,
-    enableAutomix: false,
-    automixMaxAnalyzeTime: 60,
     enableGlobalErrorDialog: true,
     macos: {
       statusBarLyric: {
@@ -763,13 +751,6 @@ export const useSettingStore = defineStore("setting", {
     },
   }),
   getters: {
-    /**
-     * 获取淡入淡出时间
-     * @returns 淡入淡出时间
-     */
-    getFadeTime(state): number {
-      return state.songVolumeFade ? state.songVolumeFadeTime : 0;
-    },
     /**
      * 检查 Last.fm 配置是否有效
      */

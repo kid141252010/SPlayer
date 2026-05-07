@@ -167,16 +167,4 @@ export class LocalMusicService {
     if (!this.db) return [];
     return this.db.getAllTracks();
   }
-
-  /** 获取音频分析结果 */
-  async getAnalysis(path: string) {
-    await this.ensureInitialized();
-    return this.db?.getAnalysis(path);
-  }
-
-  /** 保存音频分析结果 */
-  async saveAnalysis(path: string, data: string, mtime: number, size: number) {
-    await this.ensureInitialized();
-    this.db?.saveAnalysis(path, data, mtime, size);
-  }
 }

@@ -10,9 +10,9 @@ export class AudioEffectManager {
   /** 均衡器节点数组 */
   private filters: BiquadFilterNode[] = [];
 
-  /** AutoMIX 专用滤波器：高通 (用于切入时过滤低频) */
+  /** 衔接滤波器：高通 */
   private highPassFilter: BiquadFilterNode | null = null;
-  /** AutoMIX 专用滤波器：低通 (用于切出时过滤低频) */
+  /** 衔接滤波器：低通 */
   private lowPassFilter: BiquadFilterNode | null = null;
 
   /** 平滑后的低频音量 */
@@ -44,7 +44,7 @@ export class AudioEffectManager {
       return filter;
     });
 
-    // 创建 AutoMIX 滤波器
+    // 创建衔接滤波器
     this.highPassFilter = this.audioCtx.createBiquadFilter();
     this.highPassFilter.type = "highpass";
     this.highPassFilter.frequency.value = 0; // 默认关闭 (直通)
@@ -65,7 +65,7 @@ export class AudioEffectManager {
   public connect(inputNode: AudioNode): AudioNode {
     let currentNode = inputNode;
 
-    // 连接 AutoMIX 滤波器
+    // 连接衔接滤波器
     if (this.highPassFilter) {
       currentNode.connect(this.highPassFilter);
       currentNode = this.highPassFilter;
