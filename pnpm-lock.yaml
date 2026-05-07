@@ -300,7 +300,7 @@ packages:
     resolution: {integrity: sha512-ukTPVhqG4jNzMro2qA9HSCSSVJN3aN7tlb+hfqYCt3ER0yWroeA2VR38MNrOHLQ/cVj+DaIMad0kFCtWWowh/A==}
 
   '@applemusic-like-lyrics/core@file:.vendor/applemusic-like-lyrics-core-0.4.1.tgz':
-    resolution: {integrity: sha512-roWWu4Y2KOZ2PCjTu5I9h7wT/d44yVbCVGZk/7TajEQFnAMFmUCsYVzg5Ic+YTMbUdRtvJn/dJRUW6efsUHRGw==, tarball: file:.vendor/applemusic-like-lyrics-core-0.4.1.tgz}
+    resolution: {integrity: sha512-LTLNd90EUQU55Lioo6an5VD9Q+t1DbZgYV4jp3/muH6gmY4x4GEhH2oluXwyKxMCze89HmTcibEKBctsIZj1RQ==, tarball: file:.vendor/applemusic-like-lyrics-core-0.4.1.tgz}
     version: 0.4.1
     peerDependencies:
       '@pixi/app': '*'
