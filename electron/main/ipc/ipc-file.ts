@@ -1,7 +1,13 @@
 import { app, dialog, ipcMain, shell } from "electron";
-import { access, mkdir, unlink, writeFile, readFile } from "node:fs/promises";
-import { isAbsolute, join, relative, resolve } from "node:path";
+import { access, mkdir, unlink, writeFile, readFile, open, stat } from "node:fs/promises";
+import { basename, isAbsolute, join, relative, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { createHash } from "node:crypto";
+import {
+  FFMPEG_LOCAL_FILE_IPC,
+  type FfmpegLocalFileReadResult,
+  type FfmpegLocalFileStatResult,
+} from "@shared";
 import { ipcLog } from "../logger";
 import { LocalMusicService } from "../services/LocalMusicService";
 import { DownloadService } from "../services/DownloadService";
@@ -17,12 +23,32 @@ const localMusicService = new LocalMusicService();
 const downloadService = new DownloadService();
 /** 音乐元数据服务 */
 const musicMetadataService = new MusicMetadataService();
+/** FFmpeg 本地文件单次读取上限 */
+const FFMPEG_LOCAL_READ_LIMIT = 1024 * 1024;
 
 /** 获取封面目录路径 */
 const getCoverDir = (): string => {
   const store = useStore();
   const localCachePath = join(store.get("cachePath"), "local-data");
   return join(localCachePath, "covers");
+};
+
+const parseFfmpegLocalFileUrl = (fileUrl: string): string => {
+  const url = new URL(fileUrl);
+  if (url.protocol !== "file:") {
+    throw new Error("仅支持本地 file URL");
+  }
+  return fileURLToPath(url);
+};
+
+const getSafeRangeValue = (value: number, name: string): number => {
+  if (!Number.isFinite(value) || !Number.isInteger(value)) {
+    throw new Error(`${name} 必须是整数`);
+  }
+  if (value < 0) {
+    throw new Error(`${name} 不能小于 0`);
+  }
+  return value;
 };
 
 /**
@@ -82,6 +108,65 @@ const initFileIpc = (): void => {
       return false;
     }
   });
+
+  ipcMain.handle(
+    FFMPEG_LOCAL_FILE_IPC.STAT,
+    async (_, fileUrl: string): Promise<FfmpegLocalFileStatResult> => {
+      try {
+        const filePath = parseFfmpegLocalFileUrl(fileUrl);
+        const fileStat = await stat(filePath);
+        if (!fileStat.isFile()) {
+          throw new Error("目标不是文件");
+        }
+
+        return {
+          ok: true,
+          size: fileStat.size,
+          name: basename(filePath),
+        };
+      } catch (e) {
+        const error = e instanceof Error ? e.message : String(e);
+        ipcLog.error("FFmpeg local stat failed:", error);
+        return { ok: false, error };
+      }
+    },
+  );
+
+  ipcMain.handle(
+    FFMPEG_LOCAL_FILE_IPC.READ,
+    async (
+      _,
+      fileUrl: string,
+      offset: number,
+      length: number,
+    ): Promise<FfmpegLocalFileReadResult> => {
+      let fileHandle: Awaited<ReturnType<typeof open>> | null = null;
+      try {
+        const filePath = parseFfmpegLocalFileUrl(fileUrl);
+        const safeOffset = getSafeRangeValue(offset, "offset");
+        const safeLength = Math.min(getSafeRangeValue(length, "length"), FFMPEG_LOCAL_READ_LIMIT);
+        if (safeLength === 0) {
+          return { ok: true, data: new ArrayBuffer(0), bytesRead: 0 };
+        }
+
+        const buffer = Buffer.allocUnsafe(safeLength);
+        fileHandle = await open(filePath, "r");
+        const { bytesRead } = await fileHandle.read(buffer, 0, safeLength, safeOffset);
+        const data = buffer.buffer.slice(
+          buffer.byteOffset,
+          buffer.byteOffset + bytesRead,
+        ) as ArrayBuffer;
+
+        return { ok: true, data, bytesRead };
+      } catch (e) {
+        const error = e instanceof Error ? e.message : String(e);
+        ipcLog.error("FFmpeg local read failed:", error);
+        return { ok: false, error };
+      } finally {
+        await fileHandle?.close().catch(() => undefined);
+      }
+    },
+  );
 
   // 保存文件
   ipcMain.handle(

@@ -28,7 +28,7 @@ class DecoderSession {
   private decoder: AudioStreamDecoder | null = null;
   private mountDir: string | null = null;
   private isRunning = true;
-  private isPaused = false;
+  private isPaused: boolean;
 
   private ringBuffer: SharedRingBuffer | null = null;
   private sabHeader: Int32Array | null = null;
@@ -37,6 +37,8 @@ class DecoderSession {
     private module: AudioDecoderModule,
     public req: WorkerRequest & { type: "INIT" | "INIT_STREAM" },
   ) {
+    this.isPaused = !!req.paused;
+
     if (req.type === "INIT") {
       this.mountDir = `/session_${req.id}`;
       this.initFile(req.file);
@@ -87,8 +89,8 @@ class DecoderSession {
         targetPos = fileSize + offset;
       }
 
-      // 防止 FFmpeg 估算的 offset 超过文件实际大小导致 HTTP 416 或立即 EOF
-      if (targetPos >= fileSize) {
+      // 防止 FFmpeg 估算的 offset 超过文件实际大小
+      if (targetPos > fileSize) {
         // 回退到文件末尾前 128KB，确保有数据可读，让 FFmpeg 能找到帧头 resync
         const SAFE_MARGIN = 128 * 1024;
         const newPos = Math.max(0, fileSize - SAFE_MARGIN);
@@ -206,7 +208,7 @@ class DecoderSession {
     }
   }
 
-  public seek(time: number, newId: number) {
+  public seek(time: number, newId: number, paused = false) {
     if (!this.decoder) return;
     try {
       const result = this.decoder.seek(time);
@@ -214,11 +216,13 @@ class DecoderSession {
 
       this.req.id = newId;
 
-      this.post({ type: "SEEK_DONE", id: newId, time });
+      this.post({ type: "SEEK_DONE", id: newId, time, paused });
 
       this.isRunning = true;
-      this.isPaused = false;
-      this.decodeLoop();
+      this.isPaused = paused;
+      if (!this.isPaused) {
+        this.decodeLoop();
+      }
     } catch (e) {
       this.handleError(e);
     }
@@ -424,7 +428,7 @@ self.onmessage = async (e: MessageEvent<WorkerRequest>) => {
 
     case "SEEK":
       if (currentSession) {
-        currentSession.seek(req.seekTime, req.id);
+        currentSession.seek(req.seekTime, req.id, !!req.paused);
       }
       break;
 

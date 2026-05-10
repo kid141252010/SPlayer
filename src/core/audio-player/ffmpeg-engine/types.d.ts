@@ -18,17 +18,18 @@ export interface AudioMetadata {
 }
 
 export type WorkerRequest =
-  | { type: "INIT"; id: number; file: File; chunkSize: number }
+  | { type: "INIT"; id: number; file: File; chunkSize: number; paused?: boolean }
   | {
       type: "INIT_STREAM";
       id: number;
       fileSize: number;
       sab: SharedArrayBuffer;
       chunkSize: number;
+      paused?: boolean;
     }
   | { type: "PAUSE"; id: number }
   | { type: "RESUME"; id: number }
-  | { type: "SEEK"; id: number; seekTime: number }
+  | { type: "SEEK"; id: number; seekTime: number; paused?: boolean }
   | { type: "SET_TEMPO"; id: number; value: number }
   | { type: "SET_PITCH"; id: number; value: number }
   | { type: "EXPORT_WAV"; id: number; file: File };
@@ -54,7 +55,7 @@ export type WorkerResponse =
       startTime: number;
     }
   | { type: "EOF"; id: number }
-  | { type: "SEEK_DONE"; id: number; time: number }
+  | { type: "SEEK_DONE"; id: number; time: number; paused?: boolean }
   | { type: "SEEK_NET"; id: number; seekOffset: number }
   | { type: "EXPORT_WAV_DONE"; id: number; blob: Blob };
 

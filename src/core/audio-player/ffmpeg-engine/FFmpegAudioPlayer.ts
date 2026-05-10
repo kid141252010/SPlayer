@@ -1,9 +1,18 @@
 import { toError } from "@/utils/error";
+import {
+  FFMPEG_LOCAL_FILE_IPC,
+  type FfmpegLocalFileReadResult,
+  type FfmpegLocalFileStatResult,
+} from "@/types/shared";
 import { type GetDetail } from "@/utils/TypedEventTarget";
 import { AudioErrorCode, BaseAudioPlayer, type AudioEventMap } from "../BaseAudioPlayer";
 import type { AudioChannelInfo, EngineCapabilities } from "../IPlaybackEngine";
 import FFmpegWorker from "./ffmpeg.worker?worker";
-import { clampPlaybackTime, shouldDispatchFfmpegEnded } from "./playbackState";
+import {
+  clampPlaybackTime,
+  resolveFfmpegChunkTiming,
+  shouldDispatchFfmpegEnded,
+} from "./playbackState";
 import { SharedRingBuffer } from "./SharedRingBuffer";
 import type { AudioMetadata, PlayerState, WorkerRequest, WorkerResponse } from "./types";
 
@@ -12,6 +21,8 @@ type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K>
 const HIGH_WATER_MARK = 30;
 const LOW_WATER_MARK = 10;
 const IDX_SEEK_GEN = 4;
+const FFMPEG_INIT_TIMEOUT = 30000;
+const LOCAL_FILE_READ_CHUNK_SIZE = 512 * 1024;
 
 /**
  * 基于 FFmpeg WASM 的音频播放器实现
@@ -44,6 +55,10 @@ export class FFmpegAudioPlayer extends BaseAudioPlayer {
   private anchorWallTime = 0;
   /** 锚点时刻的 音频资源 时间（00:00） */
   private anchorSourceTime = 0;
+  /** 连续解码游标，用于校验后续 chunk 的时间戳 */
+  private sourceTimeCursor = 0;
+  /** 下一块音频是否允许重新建立播放锚点 */
+  private shouldAnchorNextChunk = true;
 
   /** 时间更新定时器 ID */
   private timeUpdateIntervalId: ReturnType<typeof setInterval> | null = null;
@@ -56,6 +71,8 @@ export class FFmpegAudioPlayer extends BaseAudioPlayer {
   private fetchController: AbortController | null = null;
   /** 是否为流式加载 */
   private isStreaming = false;
+  /** 流式加载来源 */
+  private streamSource: "network" | "local" | null = null;
   /** 当前加载的 URL */
   private currentUrl: string | null = null;
   /** 文件总大小 */
@@ -186,31 +203,26 @@ export class FFmpegAudioPlayer extends BaseAudioPlayer {
       }
 
       this.worker = new FFmpegWorker();
-      let file: File | null = url instanceof File ? url : null;
-
-      if (typeof url === "string" && url.startsWith("file://")) {
-        const response = await fetch(url);
-        if (!response.ok) {
-          throw new Error(`Failed to load local file: ${response.statusText}`);
-        }
-        const blob = await response.blob();
-        const fileName = url.split("/").pop() || "unknown.audio";
-        file = new File([blob], fileName, { type: blob.type });
-      }
+      const file: File | null = url instanceof File ? url : null;
 
       if (file) {
         this.currentUrl = `local://${file.name}`;
         this.setupWorkerListeners();
         this.isStreaming = false;
-        await this.requestWorker({
-          type: "INIT",
-          file: file,
-          chunkSize: 4096 * 8,
-        });
+        this.streamSource = null;
+        await this.requestWorker(
+          {
+            type: "INIT",
+            file: file,
+            chunkSize: 4096 * 8,
+            paused: true,
+          },
+          [],
+          FFMPEG_INIT_TIMEOUT,
+        );
         this.isWorkerPaused = true;
-        await this.requestWorker({ type: "PAUSE" }).catch(() => {
-          this.isWorkerPaused = false;
-        });
+      } else if (typeof url === "string" && url.startsWith("file://")) {
+        await this.loadLocalFileSrc(url);
       } else {
         await this.loadSrc(url as string);
       }
@@ -221,52 +233,83 @@ export class FFmpegAudioPlayer extends BaseAudioPlayer {
         originalEvent: new Event("error"),
         errorCode: AudioErrorCode.DECODE,
       });
+      throw err;
     }
   }
 
-  private async loadSrc(url: string) {
-    this.reset();
-    this.dispatch("loadstart");
-    try {
-      const response = await fetch(url, { method: "HEAD" });
-      if (!response.ok) {
-        throw new Error(`Failed to fetch metadata: ${response.statusText}`);
-      }
-      const contentLength = response.headers.get("Content-Length");
-      if (!contentLength) {
-        throw new Error("Content-Length header is missing");
-      }
+  private prepareStream(url: string, fileSize: number, source: "network" | "local") {
+    this.fileSize = fileSize;
+    this.currentUrl = url;
 
-      this.fileSize = parseInt(contentLength, 10);
-      this.currentUrl = url;
+    const BUFFER_SIZE = 2 * 1024 * 1024;
+    this.ringBuffer = SharedRingBuffer.create(BUFFER_SIZE);
 
-      const BUFFER_SIZE = 2 * 1024 * 1024;
-      this.ringBuffer = SharedRingBuffer.create(BUFFER_SIZE);
+    const sab = this.ringBuffer.sharedArrayBuffer;
+    this.sabHeader = new Int32Array(sab, 0, IDX_SEEK_GEN + 1);
 
-      const sab = this.ringBuffer.sharedArrayBuffer;
-      this.sabHeader = new Int32Array(sab, 0, IDX_SEEK_GEN + 1);
+    this.setupWorkerListeners();
+    this.isStreaming = true;
+    this.streamSource = source;
 
-      this.setupWorkerListeners();
-      this.isStreaming = true;
+    return sab;
+  }
 
-      const initWorkerPromise = this.requestWorker({
+  private async loadLocalFileSrc(url: string) {
+    const statResult = (await window.electron.ipcRenderer.invoke(
+      FFMPEG_LOCAL_FILE_IPC.STAT,
+      url,
+    )) as FfmpegLocalFileStatResult;
+
+    if (!statResult.ok) {
+      throw new Error(statResult.error);
+    }
+
+    const sab = this.prepareStream(url, statResult.size, "local");
+    const initWorkerPromise = this.requestWorker(
+      {
         type: "INIT_STREAM",
         fileSize: this.fileSize,
-        sab: sab,
+        sab,
         chunkSize: 4096 * 8,
-      });
+        paused: true,
+      },
+      [],
+      FFMPEG_INIT_TIMEOUT,
+    );
 
-      this.runFetchLoop(url, 0, this.fileSize);
-      await initWorkerPromise;
-      this.isWorkerPaused = true;
-      await this.requestWorker({ type: "PAUSE" }).catch(() => {
-        this.isWorkerPaused = false;
-      });
-    } catch (e) {
-      const err = toError(e);
-      console.error("[Player] LoadSrc error:", err);
-      this.dispatch("error", { originalEvent: new Event("error"), errorCode: 2 });
+    this.runLocalFileLoop(url, 0, this.fileSize);
+    await initWorkerPromise;
+    this.isWorkerPaused = true;
+  }
+
+  private async loadSrc(url: string) {
+    const response = await fetch(url, { method: "HEAD" });
+    if (!response.ok) {
+      throw new Error(`Failed to fetch metadata: ${response.statusText}`);
     }
+    const contentLength = response.headers.get("Content-Length");
+    if (!contentLength) {
+      throw new Error("Content-Length header is missing");
+    }
+
+    const fileSize = parseInt(contentLength, 10);
+    const sab = this.prepareStream(url, fileSize, "network");
+
+    const initWorkerPromise = this.requestWorker(
+      {
+        type: "INIT_STREAM",
+        fileSize: this.fileSize,
+        sab,
+        chunkSize: 4096 * 8,
+        paused: true,
+      },
+      [],
+      FFMPEG_INIT_TIMEOUT,
+    );
+
+    this.runFetchLoop(url, 0, this.fileSize);
+    await initWorkerPromise;
+    this.isWorkerPaused = true;
   }
 
   /**
@@ -338,12 +381,76 @@ export class FFmpegAudioPlayer extends BaseAudioPlayer {
     }
   }
 
+  private async runLocalFileLoop(url: string, startOffset: number, totalSize: number) {
+    if (this.fetchController) {
+      this.fetchController.abort();
+    }
+    this.fetchController = new AbortController();
+    const signal = this.fetchController.signal;
+
+    if (startOffset >= totalSize) {
+      this.ringBuffer?.setEOF();
+      this.notifyWorkerSeek();
+      return;
+    }
+
+    try {
+      let offset = Math.max(0, Math.floor(startOffset));
+      this.notifyWorkerSeek();
+
+      while (offset < totalSize) {
+        if (signal.aborted) break;
+
+        const length = Math.min(LOCAL_FILE_READ_CHUNK_SIZE, totalSize - offset);
+        const result = (await window.electron.ipcRenderer.invoke(
+          FFMPEG_LOCAL_FILE_IPC.READ,
+          url,
+          offset,
+          length,
+        )) as FfmpegLocalFileReadResult;
+
+        if (signal.aborted) break;
+
+        if (!result.ok) {
+          throw new Error(result.error);
+        }
+
+        if (result.bytesRead <= 0) {
+          this.ringBuffer?.setEOF();
+          break;
+        }
+
+        if (this.ringBuffer) {
+          await this.ringBuffer.write(new Uint8Array(result.data));
+        }
+
+        offset += result.bytesRead;
+      }
+
+      if (!signal.aborted) {
+        this.ringBuffer?.setEOF();
+      }
+    } catch (e) {
+      if (signal.aborted) return;
+
+      const err = toError(e);
+      console.error("[Player] Local file stream error:", err);
+      this.ringBuffer?.setEOF();
+      this.notifyWorkerSeek();
+      this.dispatch("error", {
+        originalEvent: new Event("error"),
+        errorCode: AudioErrorCode.NETWORK,
+      });
+    }
+  }
+
   protected async doPlay(): Promise<void> {
     this.dispatch("play");
     if (this.worker && this.isWorkerPaused) {
       this.isWorkerPaused = false;
-      await this.requestWorker({ type: "RESUME" }).catch(() => {
+      await this.requestWorker({ type: "RESUME" }).catch((e) => {
         this.isWorkerPaused = true;
+        throw e;
       });
     }
     this.dispatch("playing");
@@ -369,6 +476,8 @@ export class FFmpegAudioPlayer extends BaseAudioPlayer {
     if (this.audioCtx) {
       const now = this.audioCtx.currentTime;
       this.nextStartTime = now;
+      this.sourceTimeCursor = 0;
+      this.shouldAnchorNextChunk = true;
       this.syncTimeAnchor(now, 0);
     }
     Promise.resolve(this.doPause()).catch(() => {});
@@ -381,10 +490,12 @@ export class FFmpegAudioPlayer extends BaseAudioPlayer {
     this.activeSources = [];
     this.isDecodingFinished = false;
     this.isPendingSeek = true;
+    const shouldPauseAfterSeek = this.playerState !== "playing";
 
     await this.requestWorker({
       type: "SEEK",
       seekTime: time,
+      paused: shouldPauseAfterSeek,
     });
 
     this.dispatch("timeupdate");
@@ -429,31 +540,28 @@ export class FFmpegAudioPlayer extends BaseAudioPlayer {
       if (this.pendingRequests.has(msgId)) {
         // biome-ignore lint/style/noNonNullAssertion: 肯定有
         const req = this.pendingRequests.get(msgId)!;
-        clearTimeout(req.timer);
-        let isHandled = false;
 
         if (resp.type === "ERROR") {
+          clearTimeout(req.timer);
           req.reject(new Error(resp.error));
           this.pendingRequests.delete(msgId);
           return;
         }
 
         if (resp.type === "ACK") {
+          clearTimeout(req.timer);
           req.resolve();
-          isHandled = true;
-        } else if (resp.type === "SEEK_DONE") {
-          req.resolve();
-          isHandled = true;
-        } else if (resp.type === "EXPORT_WAV_DONE") {
-          req.resolve(resp.blob);
-          isHandled = true;
-        }
-
-        if (isHandled) {
           this.pendingRequests.delete(msgId);
-          if (resp.type === "ACK" || resp.type === "EXPORT_WAV_DONE") {
-            return;
-          }
+          return;
+        } else if (resp.type === "SEEK_DONE") {
+          clearTimeout(req.timer);
+          req.resolve();
+          this.pendingRequests.delete(msgId);
+        } else if (resp.type === "EXPORT_WAV_DONE") {
+          clearTimeout(req.timer);
+          req.resolve(resp.blob);
+          this.pendingRequests.delete(msgId);
+          return;
         }
       }
 
@@ -463,7 +571,11 @@ export class FFmpegAudioPlayer extends BaseAudioPlayer {
             this.fetchController.abort();
           }
           this.ringBuffer.reset();
-          this.runFetchLoop(this.currentUrl, resp.seekOffset, this.fileSize);
+          if (this.streamSource === "local") {
+            this.runLocalFileLoop(this.currentUrl, resp.seekOffset, this.fileSize);
+          } else {
+            this.runFetchLoop(this.currentUrl, resp.seekOffset, this.fileSize);
+          }
         }
         return;
       }
@@ -486,6 +598,8 @@ export class FFmpegAudioPlayer extends BaseAudioPlayer {
             const now = this.audioCtx.currentTime;
             this.syncTimeAnchor(now, 0);
             this.nextStartTime = now;
+            this.sourceTimeCursor = 0;
+            this.shouldAnchorNextChunk = true;
           }
           this.dispatch("canplay");
           break;
@@ -524,8 +638,10 @@ export class FFmpegAudioPlayer extends BaseAudioPlayer {
           this.isPendingSeek = false;
           if (this.audioCtx) {
             const now = this.audioCtx.currentTime;
-            this.isWorkerPaused = false;
+            this.isWorkerPaused = !!resp.paused;
             this.nextStartTime = now;
+            this.sourceTimeCursor = resp.time;
+            this.shouldAnchorNextChunk = true;
             this.syncTimeAnchor(now, resp.time);
           }
           this.dispatch("seeked");
@@ -565,15 +681,28 @@ export class FFmpegAudioPlayer extends BaseAudioPlayer {
 
     if (this.nextStartTime < now) {
       this.nextStartTime = now;
+      this.shouldAnchorNextChunk = true;
     }
 
-    this.syncTimeAnchor(this.nextStartTime, chunkStartTime);
+    const scheduledStartTime = this.nextStartTime;
+    const timing = resolveFfmpegChunkTiming({
+      chunkStartTime,
+      expectedStartTime: this.sourceTimeCursor,
+      allowAnchor: this.shouldAnchorNextChunk,
+    });
+
+    if (timing.shouldSyncAnchor) {
+      this.syncTimeAnchor(scheduledStartTime, timing.sourceStartTime);
+    }
+
+    this.sourceTimeCursor = timing.sourceStartTime + audioBuffer.duration * this.currentTempo;
+    this.shouldAnchorNextChunk = false;
 
     const source = ctx.createBufferSource();
     source.buffer = audioBuffer;
     source.connect(this.inputNode);
 
-    source.start(this.nextStartTime);
+    source.start(scheduledStartTime);
 
     this.nextStartTime += audioBuffer.duration;
 
@@ -710,6 +839,8 @@ export class FFmpegAudioPlayer extends BaseAudioPlayer {
     this.isWorkerPaused = false;
     this.isDecodingFinished = false;
     this.nextStartTime = this.audioCtx ? this.audioCtx.currentTime : 0;
+    this.sourceTimeCursor = 0;
+    this.shouldAnchorNextChunk = true;
     this.isPendingSeek = false;
 
     if (this.fetchController) {
@@ -717,6 +848,7 @@ export class FFmpegAudioPlayer extends BaseAudioPlayer {
       this.fetchController = null;
     }
     this.isStreaming = false;
+    this.streamSource = null;
     this.ringBuffer = null;
     this.sabHeader = null;
 
