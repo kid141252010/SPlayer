@@ -7,6 +7,7 @@ import {
   FFMPEG_LOCAL_FILE_IPC,
   type FfmpegLocalFileReadResult,
   type FfmpegLocalFileStatResult,
+  type LyricMatchLevel,
 } from "@shared";
 import { ipcLog } from "../logger";
 import { LocalMusicService } from "../services/LocalMusicService";
@@ -241,8 +242,15 @@ const initFileIpc = (): void => {
   // 读取本地歌词
   ipcMain.handle(
     "read-local-lyric",
-    async (_, lyricDirs: string[], id: number, songName?: string, artists?: string[]) => {
-      return musicMetadataService.readLocalLyric(lyricDirs, id, songName, artists);
+    async (
+      _,
+      lyricDirs: string[],
+      id: number,
+      songName?: string,
+      artists?: string[],
+      matchLevel?: LyricMatchLevel,
+    ) => {
+      return musicMetadataService.readLocalLyric(lyricDirs, id, songName, artists, matchLevel);
     },
   );
 
@@ -259,8 +267,14 @@ const initFileIpc = (): void => {
   // 尝试通过歌名快速在本地缓存中寻找对应的 TTML 文件信息并提取其关联的 ncmId
   ipcMain.handle(
     "match-local-ttml-by-name",
-    async (_, lyricDirs: string[], songName: string, artists?: string[]) => {
-      return matchLocalTtmlByName(lyricDirs, songName, artists);
+    async (
+      _,
+      lyricDirs: string[],
+      songName: string,
+      artists?: string[],
+      matchLevel?: LyricMatchLevel,
+    ) => {
+      return matchLocalTtmlByName(lyricDirs, songName, artists, matchLevel);
     },
   );
 

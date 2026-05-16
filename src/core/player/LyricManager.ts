@@ -20,6 +20,11 @@ import { stripLyricMetadata } from "@/utils/lyric/lyricStripper";
 import { parseLrc } from "@/utils/lyric/parseLrc";
 import { getConverter } from "@/utils/opencc";
 import { type LyricLine, parseTTML, parseYrc } from "@applemusic-like-lyrics/lyric";
+import {
+  matchLyricCandidate,
+  type LyricMatchConfidence,
+  type LyricMatchSource,
+} from "@shared";
 import { cloneDeep, isEmpty } from "lodash-es";
 import {
   applyTtmlSpatialOffsetToLines,
@@ -40,6 +45,8 @@ interface LyricFetchResult {
     usingTTMLLyric: boolean;
     usingQRCLyric: boolean;
     ttmlOffsetState?: TtmlOffsetState;
+    localMatchSource?: LyricMatchSource | "filename";
+    localMatchConfidence?: LyricMatchConfidence;
   };
 }
 
@@ -529,15 +536,6 @@ class LyricManager {
   }
 
   /**
-   * 判断 a 是否包含 b 或 b 包含 a（忽略大小写）
-   */
-  private isContainsMatch(a: string, b: string): boolean {
-    const al = a.trim().toLowerCase();
-    const bl = b.trim().toLowerCase();
-    return al.includes(bl) || bl.includes(al);
-  }
-
-  /**
    * 使用网易云搜索匹配本地歌曲元数据，获取匹配的 NCM ID
    * @param song 本地歌曲对象
    * @returns 匹配到的 NCM 歌曲 ID，未匹配返回 null
@@ -669,31 +667,17 @@ class LyricManager {
           .filter(Boolean);
         const candidateAlbum = candidate.al?.name?.trim() || candidate.album?.name?.trim() || "";
 
-        let matched = false;
-
-        if (matchLevel === "strict") {
-          // 严格：歌名精确 + 至少一个歌手精确 + 专辑精确
-          const nameMatch = this.isExactMatch(songName, candidateName);
-          const artistMatch =
-            localArtists.length === 0 ||
-            localArtists.some((la) => candidateArtists.some((ca) => this.isExactMatch(la, ca)));
-          const albumMatch = !localAlbum || this.isExactMatch(localAlbum, candidateAlbum);
-          matched = nameMatch && artistMatch && albumMatch;
-        } else if (matchLevel === "normal") {
-          // 标准：歌名精确 + 至少一个歌手精确
-          const nameMatch = this.isExactMatch(songName, candidateName);
-          const artistMatch =
-            localArtists.length === 0 ||
-            localArtists.some((la) => candidateArtists.some((ca) => this.isExactMatch(la, ca)));
-          matched = nameMatch && artistMatch;
-        } else {
-          // 宽松：歌名包含 + 歌手包含
-          const nameMatch = this.isContainsMatch(songName, candidateName);
-          const artistMatch =
-            localArtists.length === 0 ||
-            localArtists.some((la) => candidateArtists.some((ca) => this.isContainsMatch(la, ca)));
-          matched = nameMatch && artistMatch;
-        }
+        const matchResult = matchLyricCandidate(
+          { songName, artists: localArtists, matchLevel },
+          {
+            ncmIds: typeof candidate.id === "number" ? [candidate.id] : [],
+            musicNames: candidateName ? [candidateName] : [],
+            artists: candidateArtists,
+          },
+        );
+        const albumMatch =
+          matchLevel !== "strict" || !localAlbum || this.isExactMatch(localAlbum, candidateAlbum);
+        const matched = matchResult.matched && albumMatch;
 
         if (matched) {
           const ncmId = candidate.id;
@@ -850,10 +834,19 @@ class LyricManager {
       // 1. 同级同名明确优先: 原逻辑如果同级找到了就用 localResult
       // 如果没有且传入了全局目录的 overrideResult，优先回退到 overrideResult
       let baseLocalResult = localResult;
+      const hasOverrideData =
+        overrideResult &&
+        (!isEmpty(overrideResult.data.lrcData) || !isEmpty(overrideResult.data.yrcData));
+      const canUseOverrideResult =
+        hasOverrideData &&
+        !(
+          overrideResult.meta.localMatchSource === "metadata" &&
+          overrideResult.meta.localMatchConfidence === "low"
+        );
       if (
         !baseLocalResult &&
         overrideResult &&
-        (!isEmpty(overrideResult.data.lrcData) || !isEmpty(overrideResult.data.yrcData))
+        canUseOverrideResult
       ) {
         baseLocalResult = overrideResult;
       }
@@ -947,13 +940,15 @@ class LyricManager {
     try {
       const lyricDirs = Array.isArray(localLyricPath) ? localLyricPath.map((p) => String(p)) : [];
       // 读取本地歌词
-      const { lrc, ttml, matchedNcmId } = await window.electron.ipcRenderer.invoke(
-        "read-local-lyric",
-        lyricDirs,
-        id,
-        songName,
-        artists,
-      );
+      const { lrc, ttml, matchedNcmId, matchSource, matchConfidence } =
+        await window.electron.ipcRenderer.invoke(
+          "read-local-lyric",
+          lyricDirs,
+          id,
+          songName,
+          artists,
+          settingStore.localLyricMatchLevel,
+        );
 
       // 安全解析 LRC
       let lrcLines: LyricLine[] = [];
@@ -991,7 +986,12 @@ class LyricManager {
       if (lrcIsWordLevel && lrcLines.length > 0) {
         return {
           data: { lrcData: [], yrcData: lrcLines },
-          meta: { usingTTMLLyric: false, usingQRCLyric: false },
+          meta: {
+            usingTTMLLyric: false,
+            usingQRCLyric: false,
+            localMatchSource: matchSource,
+            localMatchConfidence: matchConfidence,
+          },
           matchedNcmId,
         };
       }
@@ -1002,6 +1002,8 @@ class LyricManager {
           usingTTMLLyric: ttmlLines.length > 0,
           usingQRCLyric: false,
           ttmlOffsetState: ttmlLines.length > 0 ? defaultResult.meta.ttmlOffsetState : undefined,
+          localMatchSource: matchSource,
+          localMatchConfidence: matchConfidence,
         },
         matchedNcmId,
       };
@@ -1381,8 +1383,16 @@ class LyricManager {
         // 检查全局覆盖
         const checkId = savedNcmId ?? (typeof song.id === "number" ? song.id : 0);
         const overrideResult = await this.fetchLocalOverrideLyric(checkId, song.name, artistNames);
+        const hasOverrideData =
+          !isEmpty(overrideResult.data.lrcData) || !isEmpty(overrideResult.data.yrcData);
+        const canUseOverrideResult =
+          hasOverrideData &&
+          !(
+            overrideResult.meta.localMatchSource === "metadata" &&
+            overrideResult.meta.localMatchConfidence === "low"
+          );
 
-        if (!isEmpty(overrideResult.data.lrcData) || !isEmpty(overrideResult.data.yrcData)) {
+        if (canUseOverrideResult) {
           // 对齐
           overrideResult.data = this.alignLocalLyrics(overrideResult.data);
 
@@ -1399,7 +1409,7 @@ class LyricManager {
         if (song.path) {
           // 本地文件附带的歌词文件夹 (同级 > override > NCM)
           fetchResult = await this.fetchLocalLyric(song, overrideResult);
-        } else if (!isEmpty(overrideResult.data.lrcData) || !isEmpty(overrideResult.data.yrcData)) {
+        } else if (canUseOverrideResult) {
           // 纯粹的缓存无path兜底
           fetchResult = overrideResult;
         } else {

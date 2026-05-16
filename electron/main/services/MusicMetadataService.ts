@@ -8,7 +8,8 @@ import { getFileID, getFileMD5, metaDataLyricsArrayToLrc } from "../utils/helper
 import { loadNativeModule } from "../utils/native-loader";
 import FastGlob from "fast-glob";
 import pLimit from "p-limit";
-import { readLocalLyricImpl } from "./TtmlScannerService";
+import type { LyricMatchLevel } from "@shared";
+import { readLocalLyricImpl, type LocalLyricReadResult } from "./TtmlScannerService";
 
 type toolModule = typeof import("@native/tools");
 const tools: toolModule = loadNativeModule("tools.node", "tools");
@@ -228,8 +229,9 @@ export class MusicMetadataService {
     id: number,
     songName?: string,
     artists?: string[],
-  ): Promise<{ lrc: string; ttml: string; matchedNcmId?: number }> {
-    return readLocalLyricImpl(lyricDirs, id, songName, artists);
+    matchLevel: LyricMatchLevel = "normal",
+  ): Promise<LocalLyricReadResult> {
+    return readLocalLyricImpl(lyricDirs, id, songName, artists, matchLevel);
   }
 
   /**

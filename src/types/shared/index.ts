@@ -5,3 +5,4 @@
 export * from "./play-mode";
 export * from "./taskbar-ipc";
 export * from "./ffmpeg-local-file";
+export * from "./lyric-match";
