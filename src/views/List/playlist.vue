@@ -91,6 +91,7 @@ import {
   songOrderUpdate,
 } from "@/api/playlist";
 import { formatCoverList, formatSongsList } from "@/utils/format";
+import { shouldFallbackToPlaylistTrackAll } from "@/utils/playlistTrack";
 import { renderIcon, copyData, getShareUrl } from "@/utils/helper";
 import { isLogin, toLikePlaylist, updateUserLikePlaylist } from "@/utils/auth";
 import { useDataStore, useLocalStore, useStatusStore } from "@/stores";
@@ -353,6 +354,10 @@ const handleOnlinePlaylist = async (id: number, getList: boolean, refresh: boole
   if (currentRequestId.value !== id) return;
   setDetailData(formatCoverList(detail.playlist)[0]);
   const count = detailData.value?.count || 0;
+  const loadPlaylistAllSongs = async () => {
+    if (!refresh) setListData([]);
+    await getPlaylistAllSongs(id, count, refresh);
+  };
   // 不需要获取列表或无歌曲
   if (!getList || count === 0) {
     setLoading(false);
@@ -365,12 +370,15 @@ const handleOnlinePlaylist = async (id: number, getList: boolean, refresh: boole
     // 检查是否仍然是当前请求的歌单
     if (currentRequestId.value !== id) return;
     const songs = formatSongsList(result.songs);
-    setListData(songs);
-    // 保存缓存
-    saveCache("playlist", id, detailData.value!, songs);
+    if (shouldFallbackToPlaylistTrackAll(ids, songs)) {
+      await loadPlaylistAllSongs();
+    } else {
+      setListData(songs);
+      // 保存缓存
+      saveCache("playlist", id, detailData.value!, songs);
+    }
   } else {
-    if (!refresh) setListData([]);
-    await getPlaylistAllSongs(id, count, refresh);
+    await loadPlaylistAllSongs();
   }
   // 检查是否仍然是当前请求的歌单
   if (currentRequestId.value !== id) return;

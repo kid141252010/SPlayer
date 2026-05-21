@@ -190,7 +190,7 @@
         <SvgIcon :size="26" name="SkipNext" />
       </div>
       <!-- 循环按钮 -->
-      <template v-if="musicStore.playSong.type !== 'radio' && !statusStore.personalFmMode">
+      <template v-if="!statusStore.personalFmMode">
         <div class="play-icon" @click.stop="player.toggleRepeat()">
           <SvgIcon
             :name="statusStore.repeatIcon"

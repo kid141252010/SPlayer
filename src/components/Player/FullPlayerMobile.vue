@@ -108,7 +108,7 @@
             </div>
 
             <!-- 循环模式 -->
-            <template v-if="musicStore.playSong.type !== 'radio' && !statusStore.personalFmMode">
+            <template v-if="!statusStore.personalFmMode">
               <div class="mode-btn" @click.stop="player.toggleRepeat()">
                 <SvgIcon
                   :name="statusStore.repeatIcon"

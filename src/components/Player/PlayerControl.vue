@@ -111,7 +111,7 @@
               <SvgIcon :size="26" name="SkipNext" />
             </div>
             <!-- 循环按钮 -->
-            <template v-if="musicStore.playSong.type !== 'radio' && !statusStore.personalFmMode">
+            <template v-if="!statusStore.personalFmMode">
               <div class="btn-icon mode-icon" @click.stop="player.toggleRepeat()">
                 <SvgIcon
                   :name="statusStore.repeatIcon"
@@ -358,7 +358,6 @@ onMounted(() => {
           opacity: 0.6;
           cursor: pointer;
         }
-
       }
     }
   }
@@ -369,5 +368,4 @@ onMounted(() => {
     }
   }
 }
-
 </style>

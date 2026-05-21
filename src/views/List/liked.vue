@@ -48,6 +48,7 @@ import { SongType } from "@/types/main";
 import { songDetail } from "@/api/song";
 import { playlistDetail, playlistAllSongs, songOrderUpdate } from "@/api/playlist";
 import { formatCoverList, formatSongsList } from "@/utils/format";
+import { shouldFallbackToPlaylistTrackAll } from "@/utils/playlistTrack";
 import { renderIcon, copyData, getShareUrl } from "@/utils/helper";
 import { isObject } from "lodash-es";
 import { useDataStore, useStatusStore } from "@/stores";
@@ -205,7 +206,7 @@ const loadPlaylistData = async (id: number, forceRefresh: boolean = false) => {
         return;
       }
       // 同步歌曲列表
-      await syncSongList(serverIds, id);
+      await syncSongList(serverIds, id, trackCount);
     }
 
     // 更新缓存
@@ -274,7 +275,7 @@ const loadLikedCache = () => {
  * @param serverIds 服务器返回的 ID 列表（官方顺序）
  * @param requestId 当前请求 ID
  */
-const syncSongList = async (serverIds: number[], requestId: number) => {
+const syncSongList = async (serverIds: number[], requestId: number, total: number) => {
   // 当前缓存的歌曲 Map
   const cachedMap = new Map(listData.value.map((s) => [s.id, s]));
   // 找出缺失的 ID
@@ -290,6 +291,10 @@ const syncSongList = async (serverIds: number[], requestId: number) => {
       try {
         const result = await songDetail(chunk);
         const songs = formatSongsList(result.songs);
+        if (shouldFallbackToPlaylistTrackAll(chunk, songs)) {
+          await fetchAllSongs(requestId, total);
+          return;
+        }
         songs.forEach((song) => cachedMap.set(song.id, song));
       } catch (error) {
         console.error("Failed to fetch song details:", error);
