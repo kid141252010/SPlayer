@@ -30,6 +30,43 @@ export const playlistAllSongs = (id: number, limit: number = 50, offset: number 
 };
 
 /**
+ * 获取播客歌单详情
+ * @param {number} id - 播客歌单 id
+ */
+export const voiceListDetail = (id: number) => {
+  return request({
+    url: "/voicelist/detail",
+    params: { id, timestamp: Date.now() },
+  });
+};
+
+/**
+ * 搜索播客列表
+ * @param {string} podcastName - 播客名称
+ * @param {number} [limit=10] - 返回数量，默认 10
+ * @param {number} [offset=0] - 偏移数量，默认 0
+ */
+export const voiceListSearch = (podcastName: string, limit: number = 10, offset: number = 0) => {
+  return request({
+    url: "/voicelist/search",
+    params: { podcastName, limit, offset, timestamp: Date.now() },
+  });
+};
+
+/**
+ * 获取播客歌单节目
+ * @param {number} voiceListId - 播客歌单 id
+ * @param {number} [limit=200] - 返回数量，默认 200
+ * @param {number} [offset=0] - 偏移数量，默认 0
+ */
+export const voiceListPrograms = (voiceListId: number, limit: number = 200, offset: number = 0) => {
+  return request({
+    url: "/voicelist/list",
+    params: { voiceListId, limit, offset, timestamp: Date.now() },
+  });
+};
+
+/**
  * 获取心动模式播放列表
  * @param {number} id - 歌曲 id
  * @param {number} pid - 歌单 id
@@ -123,6 +160,34 @@ export const playlistTracks = (pid: number, tracks: number[], op: "add" | "del" 
     url: "/playlist/tracks",
     method: "post",
     data: { pid, tracks: tracks.join(","), op },
+    params: { timestamp: Date.now() },
+  });
+};
+
+/**
+ * 向歌单中添加播客节目
+ * @param {number} pid - 歌单 id
+ * @param {Array<number>} ids - 播客节目 id 数组
+ */
+export const playlistTrackAdd = (pid: number, ids: number[]) => {
+  return request({
+    url: "/playlist/track/add",
+    method: "post",
+    data: { pid, ids: ids.join(",") },
+    params: { timestamp: Date.now() },
+  });
+};
+
+/**
+ * 从歌单中删除播客节目
+ * @param {number} pid - 歌单 id
+ * @param {Array<number>} ids - 播客节目 id 数组
+ */
+export const playlistTrackDelete = (pid: number, ids: number[]) => {
+  return request({
+    url: "/playlist/track/delete",
+    method: "post",
+    data: { id: pid, pid, ids: ids.join(",") },
     params: { timestamp: Date.now() },
   });
 };

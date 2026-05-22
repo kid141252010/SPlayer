@@ -20,11 +20,7 @@ import { stripLyricMetadata } from "@/utils/lyric/lyricStripper";
 import { parseLrc } from "@/utils/lyric/parseLrc";
 import { getConverter } from "@/utils/opencc";
 import { type LyricLine, parseTTML, parseYrc } from "@applemusic-like-lyrics/lyric";
-import {
-  matchLyricCandidate,
-  type LyricMatchConfidence,
-  type LyricMatchSource,
-} from "@shared";
+import { matchLyricCandidate, type LyricMatchConfidence, type LyricMatchSource } from "@shared";
 import { cloneDeep, isEmpty } from "lodash-es";
 import {
   applyTtmlSpatialOffsetToLines,
@@ -843,11 +839,7 @@ class LyricManager {
           overrideResult.meta.localMatchSource === "metadata" &&
           overrideResult.meta.localMatchConfidence === "low"
         );
-      if (
-        !baseLocalResult &&
-        overrideResult &&
-        canUseOverrideResult
-      ) {
+      if (!baseLocalResult && overrideResult && canUseOverrideResult) {
         baseLocalResult = overrideResult;
       }
 

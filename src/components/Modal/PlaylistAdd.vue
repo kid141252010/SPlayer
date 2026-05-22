@@ -96,7 +96,8 @@ import type { SongType } from "@/types/main";
 import type { MessageReactive } from "naive-ui";
 import { useDataStore, useLocalStore } from "@/stores";
 import { coverLoaded } from "@/utils/helper";
-import { playlistTracks } from "@/api/playlist";
+import { playlistTrackAdd, playlistTracks } from "@/api/playlist";
+import { splitPlaylistTracksByType } from "@/utils/playlistTrack";
 import { debounce } from "lodash-es";
 import { isLogin, updateUserLikePlaylist, updateUserLikeSongs } from "@/utils/auth";
 import { openCreatePlaylist } from "@/utils/modal";
@@ -128,6 +129,18 @@ const onlinePlaylists = computed(() => {
 // 本地歌单
 const localPlaylists = computed(() => localStore.localPlaylists);
 
+const getMutationBody = (result: any) => result?.body || result;
+
+const isMutationSuccess = (result: any) => {
+  const body = getMutationBody(result);
+  return body?.code === 200 || (result?.status === 200 && body?.code === 200);
+};
+
+const getMutationMessage = (result: any) => {
+  const body = getMutationBody(result);
+  return body?.message || body?.msg || result?.message || "添加失败，请重试";
+};
+
 // 添加到在线歌单
 const addToOnlinePlaylist = debounce(
   async (id: number, index: number) => {
@@ -136,21 +149,29 @@ const addToOnlinePlaylist = debounce(
       return;
     }
     loadingMsg.value = window.$message.loading("正在添加歌曲至歌单", { duration: 0 });
-    const ids = props.data.map((item) => item.id).filter((item) => item !== 0);
-    const result = await playlistTracks(id, ids);
-    if (loadingMsg.value) loadingMsg.value.destroy();
-    if (result.status === 200) {
-      if (result.body?.code !== 200) {
-        window.$message.error(result.body?.message || "添加失败，请重试");
-        return;
-      }
-      emit("close");
-      window.$message.success("添加歌曲至歌单成功");
-      if (index === 0) await updateUserLikeSongs();
-      await updateUserLikePlaylist();
-    } else {
-      window.$message.error(result?.message || "添加失败，请重试");
+    const { songIds, radioIds } = splitPlaylistTracksByType(props.data);
+    if (!songIds.length && !radioIds.length) {
+      if (loadingMsg.value) loadingMsg.value.destroy();
+      window.$message.warning("请正确选择歌曲");
+      return;
     }
+    const results: any[] = [];
+    if (songIds.length) {
+      results.push(await playlistTracks(id, songIds));
+    }
+    if (radioIds.length) {
+      results.push(await playlistTrackAdd(id, radioIds));
+    }
+    if (loadingMsg.value) loadingMsg.value.destroy();
+    const failed = results.find((result) => !isMutationSuccess(result));
+    if (failed) {
+      window.$message.error(getMutationMessage(failed));
+      return;
+    }
+    emit("close");
+    window.$message.success("添加歌曲至歌单成功");
+    if (index === 0 && songIds.length) await updateUserLikeSongs();
+    await updateUserLikePlaylist();
   },
   500,
   { leading: true, trailing: false },

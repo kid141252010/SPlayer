@@ -5,6 +5,47 @@ import { useStore } from "../../main/store";
 import { defaultAMLLDbServer } from "../../main/utils/config";
 import NeteaseCloudMusicApi from "@neteasecloudmusicapienhanced/api";
 
+const cookieToRecord = (cookie: unknown): Record<string, string> => {
+  if (!cookie) return {};
+  if (typeof cookie === "string") {
+    return cookie
+      .split(";")
+      .map((item) => item.trim())
+      .filter(Boolean)
+      .reduce(
+        (result, item) => {
+          const index = item.indexOf("=");
+          if (index <= 0) return result;
+          result[item.slice(0, index)] = item.slice(index + 1);
+          return result;
+        },
+        {} as Record<string, string>,
+      );
+  }
+  if (typeof cookie === "object") {
+    return Object.entries(cookie as Record<string, unknown>).reduce(
+      (result, [key, value]) => {
+        if (value === undefined || value === null || value === "") return result;
+        result[key] = String(value);
+        return result;
+      },
+      {} as Record<string, string>,
+    );
+  }
+  return {};
+};
+
+const mergeCookie = (requestCookie: unknown, browserCookie: unknown) => {
+  const mergedCookie = {
+    ...cookieToRecord(browserCookie),
+    ...cookieToRecord(requestCookie),
+  };
+  const cookieText = Object.entries(mergedCookie)
+    .map(([key, value]) => `${key}=${value}`)
+    .join(";");
+  return cookieText || undefined;
+};
+
 // 初始化 NcmAPI
 export const initNcmAPI = async (fastify: FastifyInstance) => {
   // 主信息
@@ -38,10 +79,13 @@ export const initNcmAPI = async (fastify: FastifyInstance) => {
     const neteaseApi = (
       NeteaseCloudMusicApi as unknown as Record<string, (params: unknown) => Promise<any>>
     )[routerName];
-    const params = {
+    const requestParams = {
       ...(req.query as Record<string, unknown>),
       ...(req.body as Record<string, unknown>),
-      cookie: req.cookies,
+    };
+    const params = {
+      ...requestParams,
+      cookie: mergeCookie(requestParams.cookie, req.cookies),
     };
 
     serverLog.log(`🌐 Request NcmAPI: ${routerName} | params:`, JSON.stringify(params));

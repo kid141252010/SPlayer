@@ -51,6 +51,7 @@
         :data="detailData?.id === playlistId ? displayData : []"
         :loading="loading"
         :height="songListHeight"
+        :type="isPodcastPlaylist ? 'radio' : 'song'"
         :playListId="playlistId"
         :draggable="canDragSort"
         :doubleClickAction="searchData?.length ? 'add' : 'all'"
@@ -89,9 +90,17 @@ import {
   deletePlaylist,
   updatePlaylistPrivacy,
   songOrderUpdate,
+  voiceListDetail,
+  voiceListSearch,
+  voiceListPrograms,
 } from "@/api/playlist";
 import { formatCoverList, formatSongsList } from "@/utils/format";
-import { shouldFallbackToPlaylistTrackAll } from "@/utils/playlistTrack";
+import {
+  extractVoiceListPrograms,
+  isMixPodcastPlaylist,
+  resolveVoiceListIdFromSearch,
+  shouldFallbackToPlaylistTrackAll,
+} from "@/utils/playlistTrack";
 import { renderIcon, copyData, getShareUrl } from "@/utils/helper";
 import { isLogin, toLikePlaylist, updateUserLikePlaylist } from "@/utils/auth";
 import { useDataStore, useLocalStore, useStatusStore } from "@/stores";
@@ -130,6 +139,9 @@ const playlistId = computed<number>(() => Number(router.currentRoute.value.query
 // 当前正在请求的歌单 ID，用于防止竞态条件
 const currentRequestId = ref<number>(0);
 
+// 是否为播客歌单
+const isPodcastPlaylist = ref<boolean>(false);
+
 // 加载提示
 const loadingMsg = ref<MessageReactive | null>(null);
 
@@ -157,7 +169,12 @@ const isLikePlaylist = computed(() => {
 
 // 是否可拖拽排序（用户自建歌单 + 默认排序 + 非搜索模式）
 const canDragSort = computed(() => {
-  return isUserPlaylist.value && !searchValue.value && statusStore.listSortField === "default";
+  return (
+    isUserPlaylist.value &&
+    !isPodcastPlaylist.value &&
+    !searchValue.value &&
+    statusStore.listSortField === "default"
+  );
 });
 
 // 是否处于歌单页面
@@ -298,14 +315,41 @@ const getPlaylistDetail = async (
 // 重置歌单数据
 const resetPlaylistData = (getList: boolean) => {
   setDetailData(null);
+  isPodcastPlaylist.value = false;
   if (getList) {
     setListData([]);
     resetScroll();
   }
 };
 
+// 兼容播客详情接口的多种包装
+const getVoiceListDetailData = (detail: any) => {
+  return detail?.data || detail?.voiceList || detail?.voicelist || detail;
+};
+
+const isVoiceListLoginRequired = (payload: any) => {
+  return (
+    payload?.code === 301 ||
+    payload?.data?.code === 301 ||
+    payload?.body?.code === 301 ||
+    payload?.response?.status === 301 ||
+    payload?.response?.data?.code === 301
+  );
+};
+
+// 搜索真实播客列表 ID
+const resolvePodcastVoiceListId = async (playlistName?: string, creatorUserId?: number) => {
+  if (!playlistName) return null;
+  const result = await voiceListSearch(playlistName, 30, 0);
+  if (isVoiceListLoginRequired(result)) {
+    throw Object.assign(new Error("Voice list login required"), { code: 301 });
+  }
+  return resolveVoiceListIdFromSearch(result, playlistName, creatorUserId);
+};
+
 // 获取本地歌单
 const handleLocalPlaylist = (id: number) => {
+  isPodcastPlaylist.value = false;
   const result = localStore.getLocalPlaylistDetail(id);
   if (!result) {
     window.$message.error("本地歌单不存在");
@@ -337,9 +381,10 @@ const handleOnlinePlaylist = async (id: number, getList: boolean, refresh: boole
   // 1. 尝试读取缓存
   if (!refresh && getList) {
     const cached = await loadCache("playlist", id);
-    if (cached) {
+    if (cached?.songs?.length) {
       setDetailData(cached.detail);
       setListData(cached.songs);
+      isPodcastPlaylist.value = cached.songs.some((song) => song.type === "radio");
       setLoading(false);
 
       // 后台检查更新
@@ -352,14 +397,25 @@ const handleOnlinePlaylist = async (id: number, getList: boolean, refresh: boole
   const detail = await playlistDetail(id);
   // 检查是否仍然是当前请求的歌单
   if (currentRequestId.value !== id) return;
+  isPodcastPlaylist.value = isMixPodcastPlaylist(detail.playlist);
   setDetailData(formatCoverList(detail.playlist)[0]);
   const count = detailData.value?.count || 0;
   const loadPlaylistAllSongs = async () => {
     if (!refresh) setListData([]);
     await getPlaylistAllSongs(id, count, refresh);
   };
+  if (!getList) {
+    setLoading(false);
+    return;
+  }
+  if (isPodcastPlaylist.value) {
+    await getPodcastPlaylistPrograms(id, refresh);
+    if (currentRequestId.value !== id) return;
+    setLoading(false);
+    return;
+  }
   // 不需要获取列表或无歌曲
-  if (!getList || count === 0) {
+  if (count === 0) {
     setLoading(false);
     return;
   }
@@ -385,15 +441,138 @@ const handleOnlinePlaylist = async (id: number, getList: boolean, refresh: boole
   setLoading(false);
 };
 
+// 获取播客歌单全部节目
+const getPodcastPlaylistPrograms = async (id: number, refresh: boolean = false) => {
+  const isLoginRequiredError = (error: any) => {
+    return isVoiceListLoginRequired(error) || error?.code === 301;
+  };
+
+  if (isLogin() !== 1) {
+    window.$message.warning("请登录后查看播客歌单");
+    setListData([]);
+    return;
+  }
+
+  if (!refresh) setListData([]);
+  setLoading(true);
+
+  const limit = 200;
+  let offset = 0;
+  let total = Number(detailData.value?.count || 0);
+  const listDataArray: SongType[] = [];
+  let fetchedAllPrograms = false;
+  let voiceListId: number | null = null;
+
+  try {
+    voiceListId = await resolvePodcastVoiceListId(
+      detailData.value?.name,
+      detailData.value?.creator?.id,
+    );
+  } catch (error: any) {
+    if (isLoginRequiredError(error)) {
+      window.$message.warning("请登录后查看播客歌单");
+      setListData([]);
+      return;
+    }
+    console.error("Failed to resolve podcast playlist id", error);
+    window.$message.error("获取播客歌单失败");
+    return;
+  }
+
+  if (currentRequestId.value !== id) return;
+  if (!voiceListId) {
+    window.$message.error("未找到该歌单对应的播客列表");
+    return;
+  }
+
+  try {
+    const detail = await voiceListDetail(voiceListId);
+    if (isVoiceListLoginRequired(detail)) {
+      window.$message.warning("请登录后查看播客歌单");
+      setListData([]);
+      return;
+    }
+    if (currentRequestId.value !== id) return;
+    const voiceDetail = getVoiceListDetailData(detail);
+    const formattedDetail = formatCoverList(voiceDetail)[0];
+    if (formattedDetail && detailData.value && (formattedDetail.name || formattedDetail.cover)) {
+      setDetailData({
+        ...detailData.value,
+        ...formattedDetail,
+        id,
+        count: formattedDetail.count || detailData.value.count,
+      });
+      total = Number(formattedDetail.count || total || 0);
+    }
+  } catch (error: any) {
+    if (isLoginRequiredError(error)) {
+      window.$message.warning("请登录后查看播客歌单");
+      setListData([]);
+      return;
+    }
+    console.error("Failed to load podcast playlist detail", error);
+  }
+
+  do {
+    if (currentRequestId.value !== id) return;
+    try {
+      const result = await voiceListPrograms(voiceListId, limit, offset);
+      if (isVoiceListLoginRequired(result)) {
+        window.$message.warning("请登录后查看播客歌单");
+        setListData([]);
+        return;
+      }
+      if (currentRequestId.value !== id) return;
+      const programs = extractVoiceListPrograms(result);
+      if (!programs.length) {
+        fetchedAllPrograms = listDataArray.length > 0 && (!total || offset >= total);
+        break;
+      }
+      const songs = formatSongsList(programs);
+      listDataArray.push(...songs);
+      if (!refresh) appendListData(songs);
+      const resultTotal = Number(result?.data?.total ?? result?.total ?? 0);
+      if (resultTotal > 0) total = resultTotal;
+      offset += limit;
+      if (programs.length < limit || (total > 0 && offset >= total)) {
+        fetchedAllPrograms = true;
+        break;
+      }
+    } catch (error: any) {
+      if (isLoginRequiredError(error)) {
+        window.$message.warning("请登录后查看播客歌单");
+      } else {
+        console.error("Failed to load podcast playlist programs", error);
+        window.$message.error("获取播客歌单失败");
+      }
+      break;
+    }
+  } while ((!total || offset < total) && isPlaylistPage.value && currentRequestId.value === id);
+
+  if (currentRequestId.value !== id) return;
+  if (refresh) setListData(listDataArray);
+  if (detailData.value && listDataArray.length > 0 && fetchedAllPrograms) {
+    saveCache("playlist", id, detailData.value, listDataArray);
+  }
+};
+
 // 后台检查更新
 const backgroundCheck = async (id: number, cached: ListCacheData) => {
   try {
-    const detail = await playlistDetail(id);
+    const hasRadioSongs = cached.songs.some((song) => song.type === "radio");
+    const latestDetail = hasRadioSongs
+      ? await (async () => {
+          const voiceListId = await resolvePodcastVoiceListId(
+            cached.detail.name,
+            cached.detail.creator?.id,
+          );
+          if (!voiceListId) return null;
+          return formatCoverList(getVoiceListDetailData(await voiceListDetail(voiceListId)))[0];
+        })()
+      : formatCoverList((await playlistDetail(id)).playlist)[0];
     if (currentRequestId.value !== id) return;
 
-    const latestDetail = formatCoverList(detail.playlist)[0];
-
-    if (checkNeedsUpdate(cached, latestDetail)) {
+    if (latestDetail && checkNeedsUpdate(cached, latestDetail)) {
       console.log("Cache expired, refreshing...");
       handleOnlinePlaylist(id, true, true);
     }

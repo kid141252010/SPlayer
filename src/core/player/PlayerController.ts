@@ -237,11 +237,7 @@ class PlayerController {
       statusStore.songQuality = audioSource.quality;
       statusStore.audioSource = audioSource.source;
       // 执行底层播放
-      await this.loadAndPlay(
-        audioSource.url,
-        autoPlay,
-        seek ?? 0,
-      );
+      await this.loadAndPlay(audioSource.url, autoPlay, seek ?? 0);
       if (requestToken !== this.currentRequestToken) return;
       // 后置处理
       await this.afterPlaySetup(playSongData);
@@ -340,11 +336,7 @@ class PlayerController {
    * @param autoPlay 是否自动播放
    * @param seek 开始播放时间
    */
-  public async loadAndPlay(
-    url: string,
-    autoPlay: boolean,
-    seek: number,
-  ) {
+  public async loadAndPlay(url: string, autoPlay: boolean, seek: number) {
     const statusStore = useStatusStore();
     const settingStore = useSettingStore();
     const audioManager = useAudioManager();

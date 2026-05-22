@@ -4,7 +4,12 @@ import { TypedEventTarget } from "@/utils/TypedEventTarget";
 import { AudioElementPlayer } from "../audio-player/AudioElementPlayer";
 import { AUDIO_EVENTS, type AudioEventMap } from "../audio-player/BaseAudioPlayer";
 import { FFmpegAudioPlayer } from "../audio-player/ffmpeg-engine/FFmpegAudioPlayer";
-import type { AudioChannelInfo, EngineCapabilities, IPlaybackEngine, PlayOptions } from "../audio-player/IPlaybackEngine";
+import type {
+  AudioChannelInfo,
+  EngineCapabilities,
+  IPlaybackEngine,
+  PlayOptions,
+} from "../audio-player/IPlaybackEngine";
 import { MpvPlayer, useMpvPlayer } from "../audio-player/MpvPlayer";
 
 /**

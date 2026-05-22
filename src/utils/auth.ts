@@ -19,11 +19,12 @@ import { debounce, isFunction, type DebouncedFunc } from "lodash-es";
 import { isBeforeSixAM } from "./time";
 import { dailyRecommend } from "@/api/rec";
 import { isElectron } from "./env";
-import { likePlaylist, playlistTracks } from "@/api/playlist";
+import { likePlaylist, playlistTrackDelete, playlistTracks } from "@/api/playlist";
 import { likeArtist } from "@/api/artist";
 import { likeAlbum } from "@/api/album";
 import { radioSub } from "@/api/radio";
 import router from "@/router";
+import { splitPlaylistTracksByType } from "@/utils/playlistTrack";
 
 /**
  * 用户是否登录
@@ -514,14 +515,31 @@ export const updateDailySongsData = async (refresh = false) => {
 /**
  * 删除歌曲
  * @param pid 歌单id
- * @param ids 要删除的歌曲id
+ * @param tracks 要删除的歌曲或歌曲 ID
  */
 export const deleteSongs = async (
   pid: number,
-  ids: number[],
+  tracks: Array<number | SongType>,
   options: { callback?: () => void; songName?: string } = {},
 ) => {
   const { callback, songName } = options;
+  const ids = tracks
+    .map((track) => (typeof track === "number" ? track : track.id))
+    .filter((id) => typeof id === "number" && Number.isFinite(id) && id > 0);
+  const songs = tracks.filter((track): track is SongType => typeof track !== "number");
+  const getMutationBody = (result: any) => result?.body || result;
+  const isMutationSuccess = (result: any) => {
+    const body = getMutationBody(result);
+    return body?.code === 200 || (result?.status === 200 && body?.code === 200);
+  };
+  const getMutationMessage = (result: any) => {
+    const body = getMutationBody(result);
+    return body?.message || body?.msg || result?.message || "删除歌曲失败，请重试";
+  };
+  if (!ids.length) {
+    window.$message.warning("请正确选择歌曲");
+    return;
+  }
   try {
     window.$dialog.warning({
       title: "删除歌曲",
@@ -550,17 +568,23 @@ export const deleteSongs = async (
           return;
         }
         // 在线歌单
-        const result = await playlistTracks(pid, ids, "del");
-        if (result.status === 200) {
-          if (result.body?.code !== 200) {
-            window.$message.error(result.body?.message || "删除歌曲失败，请重试");
-            return;
-          }
-          if (isFunction(callback)) callback();
-          window.$message.success("删除成功");
-        } else {
-          window.$message.error(result?.message || "删除歌曲失败，请重试");
+        const { songIds, radioIds } = songs.length
+          ? splitPlaylistTracksByType(songs)
+          : { songIds: ids, radioIds: [] as number[] };
+        const results: any[] = [];
+        if (songIds.length) {
+          results.push(await playlistTracks(pid, songIds, "del"));
         }
+        if (radioIds.length) {
+          results.push(await playlistTrackDelete(pid, radioIds));
+        }
+        const failed = results.find((result) => !isMutationSuccess(result));
+        if (failed) {
+          window.$message.error(getMutationMessage(failed));
+          return;
+        }
+        if (isFunction(callback)) callback();
+        window.$message.success("删除成功");
       },
     });
   } catch (error) {

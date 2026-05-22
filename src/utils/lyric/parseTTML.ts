@@ -151,22 +151,25 @@ const readDocumentSpatialOffsetMeta = (ttml: string): TtmlSpatialOffsetMeta | nu
 };
 
 const getRawXmlAttribute = (raw: string, name: string): string | null => {
-  const match = raw.match(new RegExp(`(?:^|\\s)(?:[\\w-]+:)?${name}\\s*=\\s*("[^"]*"|'[^']*')`, "i"));
+  const match = raw.match(
+    new RegExp(`(?:^|\\s)(?:[\\w-]+:)?${name}\\s*=\\s*("[^"]*"|'[^']*')`, "i"),
+  );
   if (!match) return null;
   const quoted = match[1];
   return quoted.slice(1, -1);
 };
 
 const readTextSpatialOffsetMeta = (ttml: string): TtmlSpatialOffsetMeta => {
-  const metadataBlocks = ttml.match(/<(?:(?:[\w-]+):)?metadata\b[\s\S]*?<\/(?:(?:[\w-]+):)?metadata>/gi);
+  const metadataBlocks = ttml.match(
+    /<(?:(?:[\w-]+):)?metadata\b[\s\S]*?<\/(?:(?:[\w-]+):)?metadata>/gi,
+  );
   if (!metadataBlocks) return emptySpatialOffsetMeta();
 
   for (const metadata of metadataBlocks) {
     const audioTags = metadata.match(/<(?:(?:[\w-]+):)?audio\b[^>]*>/gi);
     if (!audioTags) continue;
     for (const audioTag of audioTags) {
-      const role =
-        getRawXmlAttribute(audioTag, "role") || getRawXmlAttribute(audioTag, "ttm:role");
+      const role = getRawXmlAttribute(audioTag, "role") || getRawXmlAttribute(audioTag, "ttm:role");
       if (role !== "spatial") continue;
       return buildSpatialOffsetMeta(getRawXmlAttribute(audioTag, "lyricOffset"));
     }

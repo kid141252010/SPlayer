@@ -6,9 +6,7 @@ import {
   type LyricMatchCandidate,
 } from "./lyric-match";
 
-const candidate = (
-  overrides: Partial<LyricMatchCandidate> = {},
-): LyricMatchCandidate => ({
+const candidate = (overrides: Partial<LyricMatchCandidate> = {}): LyricMatchCandidate => ({
   ncmIds: [],
   musicNames: [],
   artists: [],

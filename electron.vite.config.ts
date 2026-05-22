@@ -59,6 +59,7 @@ export default defineConfig(({ mode }) => {
         vue(),
         // mode === "development" && VueDevTools(),
         AutoImport({
+          dts: resolve(__dirname, "src/auto-imports.d.ts"),
           imports: [
             "vue",
             "vue-router",

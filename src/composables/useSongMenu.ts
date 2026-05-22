@@ -340,7 +340,7 @@ export const useSongMenu = () => {
           !isCloud,
         props: {
           onClick: () =>
-            deleteSongs(playListId!, [song.id], {
+            deleteSongs(playListId!, [song], {
               callback: () => emit?.("removeSong", [song.id]),
               songName: song.name,
             }),

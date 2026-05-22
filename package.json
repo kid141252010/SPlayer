@@ -39,8 +39,8 @@
     "docs:preview": "vitepress preview docs"
   },
   "dependencies": {
-    "@applemusic-like-lyrics/core": "file:.vendor/applemusic-like-lyrics-core-0.4.1.tgz",
-    "@applemusic-like-lyrics/lyric": "file:.vendor/applemusic-like-lyrics-lyric-1.0.0.tgz",
+    "@applemusic-like-lyrics/core": "0.4.1",
+    "@applemusic-like-lyrics/lyric": "1.0.0",
     "@electron-toolkit/preload": "^3.0.2",
     "@electron-toolkit/utils": "^4.0.0",
     "@imsyy/color-utils": "^1.0.2",
@@ -131,7 +131,7 @@
   },
   "pnpm": {
     "overrides": {
-      "@applemusic-like-lyrics/ttml": "file:.vendor/applemusic-like-lyrics-ttml-1.0.0.tgz",
+      "@applemusic-like-lyrics/ttml": "1.0.0",
       "dmg-builder": "26.0.12",
       "electron-builder-squirrel-windows": "26.0.12"
     },

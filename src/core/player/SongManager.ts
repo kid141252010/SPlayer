@@ -16,6 +16,7 @@ import { toFileUrl } from "@/utils/fileUrl";
 import { AI_AUDIO_LEVELS } from "@/utils/meta";
 import { handleSongQuality } from "@/utils/helper";
 import { openUserLogin } from "@/utils/modal";
+import { getPlayableAudioId } from "@/utils/playlistTrack";
 
 /**
  * 歌曲解锁服务器
@@ -421,8 +422,21 @@ class SongManager {
       }
 
       // 在线歌曲：优先官方，其次解灰
-      const songId = nextSong.type === "radio" ? nextSong.dj?.id : nextSong.id;
+      const songId = getPlayableAudioId(nextSong);
       if (!songId) return;
+      if (nextSong.type === "radio") {
+        const cachedUrl = await this.checkLocalCache(songId);
+        if (cachedUrl) {
+          this.nextPrefetch = {
+            id: songId,
+            url: cachedUrl,
+            isUnlocked: false,
+            quality: QualityType.HQ,
+            source: "local",
+          };
+          return this.nextPrefetch;
+        }
+      }
       // 是否可解锁
       const canUnlock = isElectron && nextSong.type !== "radio" && settingStore.useSongUnlock;
       // 先请求官方地址
@@ -506,8 +520,21 @@ class SongManager {
     }
 
     // 在线歌曲
-    const songId = song.type === "radio" ? song.dj?.id : song.id;
+    const songId = getPlayableAudioId(song);
     if (!songId) return { id: 0, url: undefined, quality: undefined, isUnlocked: false };
+
+    if (song.type === "radio" && (!forceSource || forceSource === "auto")) {
+      const cachedUrl = await this.checkLocalCache(songId);
+      if (cachedUrl) {
+        return {
+          id: songId,
+          url: cachedUrl,
+          isUnlocked: false,
+          quality: QualityType.HQ,
+          source: "local",
+        };
+      }
+    }
 
     // 检查缓存并返回
     if (

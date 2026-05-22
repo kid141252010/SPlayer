@@ -2,6 +2,7 @@ import { useDataStore, useMusicStore, useStatusStore } from "@/stores";
 import type { ArtistType, CatType, CommentType, CoverType, MetaData, SongType } from "@/types/main";
 import { flatMap, isArray, uniqBy } from "lodash-es";
 import { handleSongQuality } from "./helper";
+import { resolvePodcastTrackIds } from "./playlistTrack";
 import { msToTime } from "./time";
 
 /**
@@ -52,8 +53,29 @@ export const formatSongsList = (data: any[]): SongType[] => {
   return data.filter(Boolean).map((item) => {
     // 特殊处理
     item = item?.simpleSong ? { ...item.simpleSong, pc: true } : item?.songInfo || item;
+    const { songId, playableAudioId, radioId } = resolvePodcastTrackIds(item);
+    const program = item.program || item.programInfo || item.voice || item.voiceInfo;
+    const radio = item.radio || item.djRadio || item.voiceList || item.radioInfo || program;
+    const mainSong = item.mainSong || item.mainTrack || program?.mainSong || program?.mainTrack;
+    const isRadio = !!(
+      item.dj ||
+      radio ||
+      program ||
+      item.mainTrackId ||
+      item.mainSongId ||
+      item.programId ||
+      item.voiceId ||
+      item.voiceName ||
+      item.voiceListId ||
+      songId ||
+      playableAudioId ||
+      mainSong
+    );
+    const id = Number(isRadio ? (songId ?? item.id) : item.id);
+    const mainTrackId = Number(isRadio ? (playableAudioId ?? id) : id);
     // 歌手数据
     const artist = (): MetaData[] | string => {
+      if (isRadio) return "";
       const artistData = item.artist ?? item.artists ?? item.ar;
       if (!artistData) return "";
       if (typeof artistData === "string") return artistData;
@@ -67,11 +89,39 @@ export const formatSongsList = (data: any[]): SongType[] => {
       }));
     };
     return {
-      id: item.id,
-      name: item.name,
+      id,
+      name:
+        item.name ||
+        item.title ||
+        item.voiceName ||
+        program?.name ||
+        program?.voiceName ||
+        mainSong?.name,
       artists: artist(),
-      album:
-        typeof item.album === "string"
+      album: isRadio
+        ? {
+            id:
+              radioId ||
+              radio?.id ||
+              item.radioId ||
+              item.djRadioId ||
+              item.voiceListId ||
+              program?.radioId,
+            name:
+              radio?.name ||
+              item.radioName ||
+              item.voiceListName ||
+              item.dj?.brand ||
+              program?.voiceListName ||
+              program?.radioName,
+            cover:
+              radio?.picUrl ||
+              radio?.coverUrl ||
+              program?.coverUrl ||
+              program?.picUrl ||
+              item.voiceCoverUrl,
+          }
+        : typeof item.album === "string"
           ? item.album
           : {
               id: (item.album || item.al)?.id,
@@ -81,30 +131,55 @@ export const formatSongsList = (data: any[]): SongType[] => {
       alia: isArray(item.alia || item.alias || item.transNames || item.tns)
         ? item.alia?.[0] || item.alias?.[0] || item.transNames?.[0] || item.tns?.[0]
         : item.alia,
-      dj: item.dj
+      dj: isRadio
         ? {
-            id: item.mainTrackId || item.id,
-            radioId: item.radio?.id,
-            name: item.dj?.brand,
-            creator: item.dj?.nickname,
+            id: mainTrackId,
+            radioId: radioId || radio?.id || item.radioId || item.djRadioId || item.voiceListId,
+            name:
+              item.dj?.brand ||
+              radio?.name ||
+              item.radioName ||
+              item.voiceListName ||
+              program?.voiceListName ||
+              program?.creator?.nickname ||
+              program?.creatorName,
+            creator:
+              item.dj?.nickname ||
+              item.creator?.nickname ||
+              item.creatorName ||
+              radio?.dj?.nickname ||
+              radio?.creator?.nickname ||
+              program?.creator?.nickname ||
+              program?.creatorName,
           }
         : undefined,
       ...getCoverUrl(item),
-      duration: Number(item.duration || item.dt || 0),
+      duration: Number(
+        item.duration ||
+          item.dt ||
+          item.voiceDuration ||
+          mainSong?.duration ||
+          mainSong?.dt ||
+          program?.duration ||
+          program?.voiceDuration ||
+          0,
+      ),
       originCoverType: item?.originCoverType,
-      free: item.fee || 0,
-      mv: item.mv,
-      mark: item.mark,
-      size: Number(item.size || 0),
+      free: item.fee || mainSong?.fee || program?.fee || 0,
+      mv: item.mv || mainSong?.mv || program?.mv,
+      mark: item.mark || mainSong?.mark || program?.mark,
+      size: Number(item.size || mainSong?.size || program?.size || 0),
       path: item.path,
       pc: !!item.pc,
       quality: item?.path
         ? handleSongQuality(item.quality, "local")
-        : handleSongQuality(item, "online"),
+        : handleSongQuality(mainSong || program || item, "online"),
       playCount: Number(item.playCount || item.listenerCount || 0),
       createTime: Number(item.createTime || item.publishTime) || undefined,
-      updateTime: Number(item.lastProgramCreateTime || item.scheduledPublishTime) || undefined,
-      type: item?.dj ? "radio" : "song",
+      updateTime:
+        Number(item.lastProgramCreateTime || item.scheduledPublishTime || item.updateTime) ||
+        undefined,
+      type: isRadio ? "radio" : "song",
     };
   });
 };
@@ -135,18 +210,18 @@ export const formatCoverList = (data: any[]): CoverType[] => {
       }));
     };
     return {
-      id: item.id || item.vid,
-      name: item.name || item.title,
+      id: item.id || item.vid || item.voiceListId,
+      name: item.name || item.title || item.voiceListName,
       ...getCoverUrl(item),
-      description: item.description || item.desc,
+      description: item.description || item.desc || item.voiceListDesc,
       updateTip: item.updateFrequency,
       creator: {
-        id: creator?.userId || item.dj?.userId || 0,
+        id: creator?.userId || item.dj?.userId || item.userId || 0,
         name: creator?.nickname || creator?.name || creator?.userName || item.dj?.nickname || "",
         avatarUrl: creator?.avatarUrl || item.dj?.avatarUrl || "",
       },
       artists: artists(),
-      count: item.trackCount ?? item.size ?? item.programCount ?? 0,
+      count: item.trackCount ?? item.size ?? item.programCount ?? item.voiceCount ?? 0,
       tags:
         item.tags ||
         item.algTags ||
@@ -260,10 +335,16 @@ const getCoverUrl = (item: any): CoverDataType => {
     item.cover ||
     item.picUrl ||
     item.coverUrl ||
+    item.coverPicUrl ||
     item.coverImgUrl ||
     item.imgurl ||
     item.img1v1Url ||
+    item.radio?.picUrl ||
+    item.djRadio?.picUrl ||
+    item.voiceList?.coverUrl ||
+    item.voiceCoverUrl ||
     (item.album || item.al)?.picUrl ||
+    (item.mainSong?.album || item.mainSong?.al)?.picUrl ||
     item.al?.xInfo?.picUrl;
   const coverSize = {
     s: getCoverSizeUrl(cover, 100),

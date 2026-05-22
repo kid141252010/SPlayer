@@ -104,8 +104,7 @@ const containsTitleMatch = (a: string, b: string): boolean => {
   if (left === right) return true;
   if (hasVersionMarkerConflict(left, right)) return false;
 
-  const [shorter, longer] =
-    left.length <= right.length ? [left, right] : [right, left];
+  const [shorter, longer] = left.length <= right.length ? [left, right] : [right, left];
   if (shorter.length / longer.length < 0.5) return false;
   return containsWithSafeBoundary(longer, shorter);
 };
