@@ -74,6 +74,7 @@ export default defineConfig(({ mode }) => {
           },
         }),
         Components({
+          dts: resolve(__dirname, "src/components.d.ts"),
           resolvers: [NaiveUiResolver()],
         }),
         viteCompression(),

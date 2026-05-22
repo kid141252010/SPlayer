@@ -20,7 +20,13 @@
       "@opencc": ["./native/ferrous-opencc-wasm/pkg"],
       "@shared": ["./src/types/shared"]
     },
-    "types": ["node", "electron", "electron-vite/node", "./auto-imports.d.ts", "./components.d.ts"],
+    "types": [
+      "node",
+      "electron",
+      "electron-vite/node",
+      "./src/auto-imports.d.ts",
+      "./src/components.d.ts"
+    ],
     "lib": ["ES2022", "DOM", "DOM.Iterable", "WebWorker"],
     "target": "es2022"
   }

@@ -43,8 +43,8 @@ docs/.vitepress/dist
 *.tsbuildinfo
 
 # Build-time auto-generated files
-auto-imports.d.ts
-components.d.ts
+/auto-imports.d.ts
+/components.d.ts
 dev-app-update.yml
 electron-builder.yml
 
