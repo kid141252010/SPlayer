@@ -5,6 +5,7 @@ import {
   extractVoiceListPrograms,
   getPlayableAudioId,
   isMixPodcastPlaylist,
+  isPodcastTrackItem,
   resolveVoiceListIdFromSearch,
   resolvePodcastTrackIds,
   shouldFallbackToPlaylistTrackAll,
@@ -170,6 +171,36 @@ test("voicelist 搜索结果无法精确匹配时不返回错误 ID", () => {
   );
 
   assert.equal(result, null);
+});
+
+test("普通歌曲携带 songId 和 mainSong 字段时不识别为播客", () => {
+  assert.equal(
+    isPodcastTrackItem({
+      id: 100,
+      songId: 100,
+      name: "普通歌曲",
+      mainSong: {
+        id: 100,
+        name: "普通歌曲",
+      },
+      ar: [{ id: 1, name: "歌手" }],
+      al: { id: 10, name: "专辑" },
+    }),
+    false,
+  );
+});
+
+test("播客节目字段仍识别为播客", () => {
+  assert.equal(
+    isPodcastTrackItem({
+      voiceId: 100,
+      songId: 200,
+      voiceName: "播客单集",
+      voiceListId: 300,
+      voiceListName: "播客列表",
+    }),
+    true,
+  );
 });
 
 test("按歌曲类型拆分普通歌曲和播客节目 ID", () => {

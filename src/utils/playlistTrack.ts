@@ -56,6 +56,28 @@ export const isMixPodcastPlaylist = (playlist: unknown): boolean => {
 };
 
 /**
+ * 判断原始曲目是否为播客节目
+ */
+export const isPodcastTrackItem = (item: unknown): boolean => {
+  if (!isRecord(item)) return false;
+
+  const program = item.program ?? item.programInfo ?? item.voice ?? item.voiceInfo;
+  const radio = item.radio ?? item.djRadio ?? item.voiceList ?? item.radioInfo;
+  return !!(
+    isRecord(program) ||
+    isRecord(radio) ||
+    toValidTrackId(item.programId) ||
+    toValidTrackId(item.voiceId) ||
+    toValidTrackId(item.voiceListId) ||
+    toValidTrackId(item.radioId) ||
+    toValidTrackId(item.djRadioId) ||
+    typeof item.voiceName === "string" ||
+    typeof item.voiceListName === "string" ||
+    typeof item.radioName === "string"
+  );
+};
+
+/**
  * 抽取播客歌单节目列表
  */
 export const extractVoiceListPrograms = (payload: unknown): unknown[] => {

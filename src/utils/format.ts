@@ -2,7 +2,7 @@ import { useDataStore, useMusicStore, useStatusStore } from "@/stores";
 import type { ArtistType, CatType, CommentType, CoverType, MetaData, SongType } from "@/types/main";
 import { flatMap, isArray, uniqBy } from "lodash-es";
 import { handleSongQuality } from "./helper";
-import { resolvePodcastTrackIds } from "./playlistTrack";
+import { isPodcastTrackItem, resolvePodcastTrackIds } from "./playlistTrack";
 import { msToTime } from "./time";
 
 /**
@@ -57,20 +57,7 @@ export const formatSongsList = (data: any[]): SongType[] => {
     const program = item.program || item.programInfo || item.voice || item.voiceInfo;
     const radio = item.radio || item.djRadio || item.voiceList || item.radioInfo || program;
     const mainSong = item.mainSong || item.mainTrack || program?.mainSong || program?.mainTrack;
-    const isRadio = !!(
-      item.dj ||
-      radio ||
-      program ||
-      item.mainTrackId ||
-      item.mainSongId ||
-      item.programId ||
-      item.voiceId ||
-      item.voiceName ||
-      item.voiceListId ||
-      songId ||
-      playableAudioId ||
-      mainSong
-    );
+    const isRadio = isPodcastTrackItem(item);
     const id = Number(isRadio ? (songId ?? item.id) : item.id);
     const mainTrackId = Number(isRadio ? (playableAudioId ?? id) : id);
     // 歌手数据

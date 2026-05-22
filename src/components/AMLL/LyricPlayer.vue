@@ -194,6 +194,25 @@ interface LyricLineObject {
   element: HTMLElement;
 }
 
+type DomLyricLine = {
+  getLine: () => LyricLine;
+  getElement: () => HTMLElement;
+};
+
+type DomLyricGroup = {
+  mainLine?: DomLyricLine;
+  bgLine?: DomLyricLine;
+};
+
+// 兼容 AMLL 新版分组结构
+const toLyricLineObject = (line?: DomLyricLine): LyricLineObject | undefined => {
+  if (!line) return;
+  return {
+    lyricLine: line.getLine(),
+    element: line.getElement(),
+  };
+};
+
 // 模板引用
 const wrapperRef = useTemplateRef<HTMLDivElement>("wrapper-ref");
 // 歌词播放实例
@@ -329,7 +348,12 @@ defineExpose<LyricPlayerRef>({
     playerRef.value?.setCurrentTime(time, isSeek);
   },
   get currentLyricLineObjects() {
-    return playerRef.value?.currentLyricLineObjects as LyricLineObject[] | undefined;
+    return playerRef.value?.currentLyricGroups.flatMap((group) =>
+      [
+        toLyricLineObject((group as DomLyricGroup).mainLine),
+        toLyricLineObject((group as DomLyricGroup).bgLine),
+      ].filter((line): line is LyricLineObject => Boolean(line)),
+    );
   },
 });
 </script>

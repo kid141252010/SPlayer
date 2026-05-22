@@ -5,7 +5,7 @@ settings:
   excludeLinksFromLockfile: false
 
 overrides:
-  '@applemusic-like-lyrics/ttml': 1.0.0
+  '@applemusic-like-lyrics/ttml': 1.0.1
   dmg-builder: 26.0.12
   electron-builder-squirrel-windows: 26.0.12
 
@@ -14,11 +14,11 @@ importers:
   .:
     dependencies:
       '@applemusic-like-lyrics/core':
-        specifier: 0.4.1
-        version: 0.4.1(@pixi/app@7.4.3(@pixi/core@7.4.3)(@pixi/display@7.4.3(@pixi/core@7.4.3)))(@pixi/core@7.4.3)(@pixi/display@7.4.3(@pixi/core@7.4.3))(@pixi/filter-blur@7.4.3(@pixi/core@7.4.3))(@pixi/filter-bulge-pinch@5.1.1(@pixi/core@7.4.3))(@pixi/filter-color-matrix@7.4.3(@pixi/core@7.4.3))(@pixi/sprite@7.4.3(@pixi/core@7.4.3)(@pixi/display@7.4.3(@pixi/core@7.4.3)))
+        specifier: 0.5.1
+        version: 0.5.1(@pixi/app@7.4.3(@pixi/core@7.4.3)(@pixi/display@7.4.3(@pixi/core@7.4.3)))(@pixi/core@7.4.3)(@pixi/display@7.4.3(@pixi/core@7.4.3))(@pixi/filter-blur@7.4.3(@pixi/core@7.4.3))(@pixi/filter-bulge-pinch@5.1.1(@pixi/core@7.4.3))(@pixi/filter-color-matrix@7.4.3(@pixi/core@7.4.3))(@pixi/sprite@7.4.3(@pixi/core@7.4.3)(@pixi/display@7.4.3(@pixi/core@7.4.3)))
       '@applemusic-like-lyrics/lyric':
-        specifier: 1.0.0
-        version: 1.0.0
+        specifier: 1.0.1
+        version: 1.0.1
       '@electron-toolkit/preload':
         specifier: ^3.0.2
         version: 3.0.2(electron@39.4.0)
@@ -299,9 +299,8 @@ packages:
   7zip-bin@5.2.0:
     resolution: {integrity: sha512-ukTPVhqG4jNzMro2qA9HSCSSVJN3aN7tlb+hfqYCt3ER0yWroeA2VR38MNrOHLQ/cVj+DaIMad0kFCtWWowh/A==}
 
-  '@applemusic-like-lyrics/core@0.4.1':
-    resolution: {integrity: sha512-LTLNd90EUQU55Lioo6an5VD9Q+t1DbZgYV4jp3/muH6gmY4x4GEhH2oluXwyKxMCze89HmTcibEKBctsIZj1RQ==, tarball: https://registry.npmjs.org/@applemusic-like-lyrics/core/-/core-0.4.1.tgz}
-    version: 0.4.1
+  '@applemusic-like-lyrics/core@0.5.1':
+    resolution: {integrity: sha512-DAEHmAe2USj/9qH4GKRFr/TuIKCOsNlcjgB2J2Lh4Be65RLU/pWpgnRhpIbV9ppinJzs+dWEsueWZiFTgLvMYQ==}
     peerDependencies:
       '@pixi/app': '*'
       '@pixi/core': '*'
@@ -311,13 +310,11 @@ packages:
       '@pixi/filter-color-matrix': '*'
       '@pixi/sprite': '*'
 
-  '@applemusic-like-lyrics/lyric@1.0.0':
-    resolution: {integrity: sha512-vHetLWqG0usNN9Dhj18t6Ot1JkuXFuvmfSnLH/RwVe4KPxYeD3f7uGRbaI45N9micut/LYTGsgSWRNf2pVMkug==, tarball: https://registry.npmjs.org/@applemusic-like-lyrics/lyric/-/lyric-1.0.0.tgz}
-    version: 1.0.0
+  '@applemusic-like-lyrics/lyric@1.0.1':
+    resolution: {integrity: sha512-b4/9MUTdp9AuW59JTBpOxb8P+4SF8NjaoZYpLD/nkVHSM/4kfbnYpo9HldSMOjRLwlKVv8bTF6Vr9K3OLHL85Q==}
 
-  '@applemusic-like-lyrics/ttml@1.0.0':
-    resolution: {integrity: sha512-v0Zn3Xi544nhDSvpTt8uVY8cbOktyhICoFtCbPweklOS7pZn4WlQiw6qwhsZZcS/ulm4PtR9JGb81QAVqqopuw==, tarball: https://registry.npmjs.org/@applemusic-like-lyrics/ttml/-/ttml-1.0.0.tgz}
-    version: 1.0.0
+  '@applemusic-like-lyrics/ttml@1.0.1':
+    resolution: {integrity: sha512-xhLajMI9Jm+Etv99GbK5Fx8wqa5m9wnS3kCqOTBUy9imjsah2PrV1XyCc6LBssPhEFcQt2SrFNQlwT6GZwpY7A==}
 
   '@babel/code-frame@7.29.0':
     resolution: {integrity: sha512-9NhCeYjq9+3uxgdtp20LSiJXJvN0FeCtNGpJxuMFZ1Kv3cWUNb6DOhJwUvcVCzKGR66cw4njwM6hrJLqgOwbcw==}
@@ -5877,7 +5874,7 @@ snapshots:
 
   7zip-bin@5.2.0: {}
 
-  '@applemusic-like-lyrics/core@0.4.1(@pixi/app@7.4.3(@pixi/core@7.4.3)(@pixi/display@7.4.3(@pixi/core@7.4.3)))(@pixi/core@7.4.3)(@pixi/display@7.4.3(@pixi/core@7.4.3))(@pixi/filter-blur@7.4.3(@pixi/core@7.4.3))(@pixi/filter-bulge-pinch@5.1.1(@pixi/core@7.4.3))(@pixi/filter-color-matrix@7.4.3(@pixi/core@7.4.3))(@pixi/sprite@7.4.3(@pixi/core@7.4.3)(@pixi/display@7.4.3(@pixi/core@7.4.3)))':
+  '@applemusic-like-lyrics/core@0.5.1(@pixi/app@7.4.3(@pixi/core@7.4.3)(@pixi/display@7.4.3(@pixi/core@7.4.3)))(@pixi/core@7.4.3)(@pixi/display@7.4.3(@pixi/core@7.4.3))(@pixi/filter-blur@7.4.3(@pixi/core@7.4.3))(@pixi/filter-bulge-pinch@5.1.1(@pixi/core@7.4.3))(@pixi/filter-color-matrix@7.4.3(@pixi/core@7.4.3))(@pixi/sprite@7.4.3(@pixi/core@7.4.3)(@pixi/display@7.4.3(@pixi/core@7.4.3)))':
     dependencies:
       '@pixi/app': 7.4.3(@pixi/core@7.4.3)(@pixi/display@7.4.3(@pixi/core@7.4.3))
       '@pixi/core': 7.4.3
@@ -5891,12 +5888,12 @@ snapshots:
       deep-freeze: 0.0.1
       gl-matrix: 4.0.0-beta.2
 
-  '@applemusic-like-lyrics/lyric@1.0.0':
+  '@applemusic-like-lyrics/lyric@1.0.1':
     dependencies:
-      '@applemusic-like-lyrics/ttml': 1.0.0
+      '@applemusic-like-lyrics/ttml': 1.0.1
       pako: 2.1.0
 
-  '@applemusic-like-lyrics/ttml@1.0.0': {}
+  '@applemusic-like-lyrics/ttml@1.0.1': {}
 
   '@babel/code-frame@7.29.0':
     dependencies:

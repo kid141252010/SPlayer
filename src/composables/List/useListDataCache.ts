@@ -26,7 +26,7 @@ export interface ListCacheData {
 }
 
 /** 缓存版本号 */
-const CACHE_VERSION = 2; // Bump version due to logic change
+const CACHE_VERSION = 3; // 歌曲类型识别规则变更
 
 /**
  * 列表数据缓存组合式函数
