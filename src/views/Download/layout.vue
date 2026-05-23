@@ -79,7 +79,7 @@
 <script setup lang="ts">
 import { useSettingStore, useDataStore } from "@/stores";
 import type { SongType } from "@/types/main";
-import { formatSongsList } from "@/utils/format";
+import { formatLocalSongsList } from "@/utils/localSongFormat";
 import { usePlayerController } from "@/core/player/PlayerController";
 import type { MessageReactive } from "naive-ui";
 import { useDownloadManager } from "@/core/resource/DownloadManager";
@@ -150,7 +150,7 @@ const getDownloadMusic = async (showTip: boolean = false) => {
     const result = await downloadManager.getDownloadedSongs();
 
     if (result) {
-      listData.value = formatSongsList(result);
+      listData.value = formatLocalSongsList(result);
       if (showTip) window.$message.success(`已发现 ${listData.value.length} 首`);
     } else {
       listData.value = [];

@@ -101,7 +101,7 @@ export class MusicMetadataService {
               album: common.album || "",
               alia: common.comment?.[0]?.text || "",
               duration: (format?.duration ?? 0) * 1000,
-              size: (fileStat.size / (1024 * 1024)).toFixed(2),
+              size: fileStat.size,
               path: fullPath,
               quality: format.bitrate ?? 0,
               // 文件创建时间（用于排序）

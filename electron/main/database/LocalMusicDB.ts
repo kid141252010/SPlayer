@@ -1,6 +1,7 @@
 import Database from "better-sqlite3";
 import { existsSync } from "node:fs";
 import { readFile, rename } from "node:fs/promises";
+import { buildTrackParams } from "./localMusicTrackParams";
 
 /** 列定义接口 */
 interface ColumnDef {
@@ -210,10 +211,7 @@ export class LocalMusicDB {
     const transaction = this.db.transaction((tracks: MusicTrack[]) => {
       for (const track of tracks) {
         // 确保所有列都有值，缺失的使用 null
-        const params: Record<string, unknown> = {};
-        for (const col of columns) {
-          params[col] = (track as unknown as Record<string, unknown>)[col] ?? null;
-        }
+        const params = buildTrackParams(track as unknown as Record<string, unknown>, columns);
         insertStmt.run(params);
       }
     });

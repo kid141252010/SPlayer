@@ -502,7 +502,7 @@ class SongManager {
         return { id: song.id, url: undefined };
       }
       const fileUrl = toFileUrl(song.path);
-      return { id: song.id, url: fileUrl, source: "local" };
+      return { id: song.id, url: fileUrl, quality: song.quality, source: "local" };
     }
 
     // Stream songs (Subsonic / Jellyfin)

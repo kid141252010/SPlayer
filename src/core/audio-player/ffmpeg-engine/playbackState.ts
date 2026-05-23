@@ -6,6 +6,7 @@ interface FfmpegEndedState {
   isDecodingFinished: boolean;
   currentTime: number;
   duration: number;
+  endedDispatched?: boolean;
   endTolerance?: number;
 }
 
@@ -72,14 +73,38 @@ export const resolveFfmpegChunkTiming = ({
   };
 };
 
+export const shouldAcceptFfmpegChunk = ({
+  isPendingSeek,
+  audioContextState,
+  playerState,
+}: {
+  isPendingSeek: boolean;
+  audioContextState?: AudioContextState;
+  playerState?: PlayerState;
+}): boolean => {
+  if (isPendingSeek) return false;
+  if (playerState && playerState !== "playing") return false;
+  return audioContextState !== "suspended" && audioContextState !== "closed";
+};
+
+export const shouldResumeFfmpegWorker = ({
+  playerState,
+  isWorkerPaused,
+}: {
+  playerState: PlayerState;
+  isWorkerPaused: boolean;
+}): boolean => playerState === "playing" && isWorkerPaused;
+
 export const shouldDispatchFfmpegEnded = ({
   state,
   activeSourceCount,
   isDecodingFinished,
   currentTime,
   duration,
+  endedDispatched = false,
   endTolerance = DEFAULT_END_TOLERANCE,
 }: FfmpegEndedState): boolean => {
+  if (endedDispatched) return false;
   if (state !== "playing") return false;
   if (activeSourceCount > 0) return false;
   if (!isDecodingFinished) return false;

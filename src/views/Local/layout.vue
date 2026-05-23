@@ -165,7 +165,7 @@ import { useMobile } from "@/composables/useMobile";
 import { usePlayerController } from "@/core/player/PlayerController";
 import { useLocalStore, useSettingStore } from "@/stores";
 import type { SongType } from "@/types/main";
-import { formatSongsList } from "@/utils/format";
+import { formatLocalSongsList, normalizeLocalSongSize } from "@/utils/localSongFormat";
 import { fuzzySearch, renderIcon } from "@/utils/helper";
 import { openBatchList, openCreatePlaylist, openLocalMusicDirectoryModal } from "@/utils/modal";
 import { debounce } from "lodash-es";
@@ -307,7 +307,10 @@ const getMusicFolder = async (): Promise<string[]> => {
 
 // 全部音乐大小
 const allMusicSize = computed<number>(() => {
-  const totalBytes = listData.value.reduce((total, song) => (total += song?.size || 0), 0);
+  const totalBytes = listData.value.reduce(
+    (total, song) => total + normalizeLocalSongSize(song?.size),
+    0,
+  );
   return Number((totalBytes / (1024 * 1024 * 1024)).toFixed(2));
 });
 
@@ -359,9 +362,39 @@ interface SyncCompleteData {
   tracks?: Record<string, unknown>[];
 }
 
+type TracksBatchHandler = (_event: unknown, tracks: Record<string, unknown>[]) => void;
+type CompleteHandler = (_event: unknown, data: SyncCompleteData) => void;
+type ProgressHandler = (_event: unknown, payload: { current: number; total: number }) => void;
+
+let syncRequestId = 0;
+let tracksBatchHandler: TracksBatchHandler | null = null;
+let completeHandler: CompleteHandler | null = null;
+let progressHandler: ProgressHandler | null = null;
+
+// 清理本组件注册的同步监听器
+const cleanupSyncListeners = () => {
+  if (tracksBatchHandler) {
+    window.electron.ipcRenderer.removeListener("music-sync-tracks-batch", tracksBatchHandler);
+    tracksBatchHandler = null;
+  }
+  if (completeHandler) {
+    window.electron.ipcRenderer.removeListener("music-sync-complete", completeHandler);
+    completeHandler = null;
+  }
+};
+
+// 清理本组件注册的进度监听器
+const cleanupProgressListener = () => {
+  if (!progressHandler) return;
+  window.electron.ipcRenderer.removeListener("music-sync-progress", progressHandler);
+  progressHandler = null;
+};
+
 // 获取全部路径歌曲（流式接收）
 const getAllLocalMusic = debounce(
   async (showTip: boolean = false) => {
+    const requestId = ++syncRequestId;
+    cleanupSyncListeners();
     // 获取路径
     const allPath = await getMusicFolder();
     if (!allPath || !allPath.length) {
@@ -388,18 +421,15 @@ const getAllLocalMusic = debounce(
     // 累积接收到的tracks
     const receivedTracks: Record<string, unknown>[] = [];
     let isCompleted = false;
-    // 清理之前的监听器
-    window.electron.ipcRenderer.removeAllListeners("music-sync-tracks-batch");
-    window.electron.ipcRenderer.removeAllListeners("music-sync-complete");
     // 监听批量track数据
-    const tracksBatchHandler = (_event: unknown, tracks: Record<string, unknown>[]) => {
-      if (!loading.value || isCompleted) return;
+    tracksBatchHandler = (_event: unknown, tracks: Record<string, unknown>[]) => {
+      if (requestId !== syncRequestId || !loading.value || isCompleted) return;
       // 批量添加tracks
       receivedTracks.push(...tracks);
     };
     // 监听完成事件
-    const completeHandler = (_event: unknown, data: SyncCompleteData) => {
-      if (isCompleted) return;
+    completeHandler = (_event: unknown, data: SyncCompleteData) => {
+      if (requestId !== syncRequestId || isCompleted) return;
       isCompleted = true;
       if (!data.success) {
         const errorMsg = data.message || "本地音乐同步失败";
@@ -409,13 +439,12 @@ const getAllLocalMusic = debounce(
         loadingMsg.value?.destroy();
         loadingMsg.value = null;
         // 清理监听器
-        window.electron.ipcRenderer.removeAllListeners("music-sync-tracks-batch");
-        window.electron.ipcRenderer.removeAllListeners("music-sync-complete");
+        cleanupSyncListeners();
         return;
       }
       const sourceTracks = data.tracks && data.tracks.length > 0 ? data.tracks : receivedTracks;
       // 直接格式化
-      const finalSongs = formatSongsList(sourceTracks);
+      const finalSongs = formatLocalSongsList(sourceTracks);
       localStore.updateLocalSong(finalSongs);
       // 更新搜索数据
       if (searchValue.value) {
@@ -438,8 +467,7 @@ const getAllLocalMusic = debounce(
       loadingMsg.value?.destroy();
       loadingMsg.value = null;
       // 清理监听器
-      window.electron.ipcRenderer.removeAllListeners("music-sync-tracks-batch");
-      window.electron.ipcRenderer.removeAllListeners("music-sync-complete");
+      cleanupSyncListeners();
     };
     // 注册监听器
     window.electron.ipcRenderer.on("music-sync-tracks-batch", tracksBatchHandler);
@@ -449,7 +477,7 @@ const getAllLocalMusic = debounce(
       // 触发同步
       const res = await window.electron.ipcRenderer.invoke("local-music-sync", allPath);
       // 检查返回值，如果是扫描正在进行中
-      if (res && !res.success) {
+      if (requestId === syncRequestId && res && !res.success) {
         isCompleted = true;
         loading.value = false;
         loadingMsg.value?.destroy();
@@ -459,10 +487,10 @@ const getAllLocalMusic = debounce(
         } else {
           window.$message.error(res.message || "本地音乐同步失败");
         }
-        window.electron.ipcRenderer.removeAllListeners("music-sync-tracks-batch");
-        window.electron.ipcRenderer.removeAllListeners("music-sync-complete");
+        cleanupSyncListeners();
       }
     } catch (error) {
+      if (requestId !== syncRequestId) return;
       isCompleted = true;
       console.error("获取本地音乐失败:", error);
       window.$message.error("获取本地音乐失败，请重试");
@@ -470,8 +498,7 @@ const getAllLocalMusic = debounce(
       loadingMsg.value?.destroy();
       loadingMsg.value = null;
       // 清理监听器
-      window.electron.ipcRenderer.removeAllListeners("music-sync-tracks-batch");
-      window.electron.ipcRenderer.removeAllListeners("music-sync-complete");
+      cleanupSyncListeners();
     }
   },
   300,
@@ -489,7 +516,7 @@ const listSearch = debounce((val: string) => {
   filteredSearchResult.value = fuzzySearch(val, getFilteredData());
 }, 300);
 
-localEventBus.on(() => getAllLocalMusic());
+const stopLocalEventBus = localEventBus.on(() => getAllLocalMusic());
 
 // 本地目录变化
 watch(
@@ -522,7 +549,7 @@ watch(
 
 onMounted(() => {
   // 监听本地音乐同步进度
-  const progressHandler = (_event: unknown, payload: { current: number; total: number }) => {
+  progressHandler = (_event: unknown, payload: { current: number; total: number }) => {
     if (!loading.value) return;
     const { current, total } = payload || { current: 0, total: 0 };
     if (!total || total <= 0) return;
@@ -537,10 +564,11 @@ onMounted(() => {
 });
 
 onUnmounted(() => {
-  // 清理所有相关监听器
-  window.electron.ipcRenderer.removeAllListeners("music-sync-progress");
-  window.electron.ipcRenderer.removeAllListeners("music-sync-tracks-batch");
-  window.electron.ipcRenderer.removeAllListeners("music-sync-complete");
+  syncRequestId++;
+  getAllLocalMusic.cancel();
+  stopLocalEventBus();
+  cleanupProgressListener();
+  cleanupSyncListeners();
 });
 </script>
 

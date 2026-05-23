@@ -45,7 +45,7 @@ export type WorkerResponse =
       duration: number;
       metadata: Record<string, string>;
       encoding: string;
-      coverUrl?: string | undefined;
+      coverData?: Uint8Array | undefined;
       bitsPerSample: number;
     }
   | {

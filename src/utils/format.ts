@@ -87,69 +87,69 @@ export const formatSongsList = (data: any[]): SongType[] => {
       artists: artist(),
       album: isRadio
         ? {
-            id:
-              radioId ||
-              radio?.id ||
-              item.radioId ||
-              item.djRadioId ||
-              item.voiceListId ||
-              program?.radioId,
-            name:
-              radio?.name ||
-              item.radioName ||
-              item.voiceListName ||
-              item.dj?.brand ||
-              program?.voiceListName ||
-              program?.radioName,
-            cover:
-              radio?.picUrl ||
-              radio?.coverUrl ||
-              program?.coverUrl ||
-              program?.picUrl ||
-              item.voiceCoverUrl,
-          }
+          id:
+            radioId ||
+            radio?.id ||
+            item.radioId ||
+            item.djRadioId ||
+            item.voiceListId ||
+            program?.radioId,
+          name:
+            radio?.name ||
+            item.radioName ||
+            item.voiceListName ||
+            item.dj?.brand ||
+            program?.voiceListName ||
+            program?.radioName,
+          cover:
+            radio?.picUrl ||
+            radio?.coverUrl ||
+            program?.coverUrl ||
+            program?.picUrl ||
+            item.voiceCoverUrl,
+        }
         : typeof item.album === "string"
           ? item.album
           : {
-              id: (item.album || item.al)?.id,
-              name: (item.album || item.al)?.name,
-              cover: (item.album || item.al)?.picUrl,
-            },
+            id: (item.album || item.al)?.id,
+            name: (item.album || item.al)?.name,
+            cover: (item.album || item.al)?.picUrl,
+          },
       alia: isArray(item.alia || item.alias || item.transNames || item.tns)
         ? item.alia?.[0] || item.alias?.[0] || item.transNames?.[0] || item.tns?.[0]
         : item.alia,
       dj: isRadio
         ? {
-            id: mainTrackId,
-            radioId: radioId || radio?.id || item.radioId || item.djRadioId || item.voiceListId,
-            name:
-              item.dj?.brand ||
-              radio?.name ||
-              item.radioName ||
-              item.voiceListName ||
-              program?.voiceListName ||
-              program?.creator?.nickname ||
-              program?.creatorName,
-            creator:
-              item.dj?.nickname ||
-              item.creator?.nickname ||
-              item.creatorName ||
-              radio?.dj?.nickname ||
-              radio?.creator?.nickname ||
-              program?.creator?.nickname ||
-              program?.creatorName,
-          }
+          id: mainTrackId,
+          radioId: radioId || radio?.id || item.radioId || item.djRadioId || item.voiceListId,
+          name:
+            item.dj?.brand ||
+            radio?.name ||
+            item.radioName ||
+            item.voiceListName ||
+            program?.voiceListName ||
+            program?.creator?.nickname ||
+            program?.creatorName,
+          creator:
+            item.dj?.nickname ||
+            item.creator?.nickname ||
+            item.creatorName ||
+            radio?.dj?.nickname ||
+            radio?.creator?.nickname ||
+            program?.creator?.nickname ||
+            program?.creatorName,
+        }
         : undefined,
       ...getCoverUrl(item),
       duration: Number(
         item.duration ||
-          item.dt ||
-          item.voiceDuration ||
-          mainSong?.duration ||
-          mainSong?.dt ||
-          program?.duration ||
-          program?.voiceDuration ||
-          0,
+        item.dt ||
+        item.voiceDuration ||
+        mainSong?.duration ||
+        mainSong?.dt ||
+        program?.duration ||
+        program?.voiceDuration ||
+        0,
       ),
       originCoverType: item?.originCoverType,
       free: item.fee || mainSong?.fee || program?.fee || 0,
@@ -267,13 +267,13 @@ export const formatCommentList = (data: any[]): CommentType[] => {
     beReplied:
       item.beReplied?.length > 0
         ? {
-            content: item.beReplied[0]?.content,
-            user: {
-              id: item.beReplied[0]?.user.userId,
-              name: item.beReplied[0]?.user.nickname,
-              avatarUrl: item.beReplied[0]?.user.avatarUrl,
-            },
-          }
+          content: item.beReplied[0]?.content,
+          user: {
+            id: item.beReplied[0]?.user.userId,
+            name: item.beReplied[0]?.user.nickname,
+            avatarUrl: item.beReplied[0]?.user.avatarUrl,
+          },
+        }
         : undefined,
     time: item.time,
     likedCount: item.likedCount,
@@ -289,9 +289,9 @@ export const formatCommentList = (data: any[]): CommentType[] => {
     },
     ip: item?.ip
       ? {
-          ip: item.ip,
-          location: item.location,
-        }
+        ip: item.ip,
+        location: item.location,
+      }
       : undefined,
   }));
 };

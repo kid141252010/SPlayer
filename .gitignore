@@ -31,6 +31,8 @@ target
 *.sw?
 .env.development
 .env.production
+.codex/*
+.codex-tmp/*
 
 # Docs
 docs/.vitepress/cache
