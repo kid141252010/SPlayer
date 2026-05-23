@@ -10,6 +10,7 @@ import type {
 } from "./types";
 
 const IDX_SEEK_GEN = 4; // Header(16 bytes) + 4 bytes offset
+const AVERROR_EOF = -541478725;
 
 let ffmpegModulePromise: Promise<AudioDecoderModule> | null = null;
 
@@ -132,26 +133,29 @@ class DecoderSession {
     }
     keysList.delete();
 
-    let coverUrl: string | undefined;
+    let coverData: Uint8Array | undefined;
     if (props.coverArt.size() > 0) {
       const cover = new Uint8Array(props.coverArt.size());
       for (let i = 0; i < props.coverArt.size(); i++) {
         cover[i] = props.coverArt.get(i);
       }
-      coverUrl = URL.createObjectURL(new Blob([cover]));
+      coverData = cover;
     }
 
-    this.post({
-      type: "METADATA",
-      id: this.req.id,
-      sampleRate: props.sampleRate,
-      channels: props.channelCount,
-      duration: props.duration,
-      metadata: metadataObj,
-      encoding: props.encoding,
-      coverUrl,
-      bitsPerSample: props.bitsPerSample,
-    });
+    this.post(
+      {
+        type: "METADATA",
+        id: this.req.id,
+        sampleRate: props.sampleRate,
+        channels: props.channelCount,
+        duration: props.duration,
+        metadata: metadataObj,
+        encoding: props.encoding,
+        coverData,
+        bitsPerSample: props.bitsPerSample,
+      },
+      coverData ? [coverData.buffer] : [],
+    );
 
     props.metadata.delete();
     props.coverArt.delete();
@@ -163,13 +167,6 @@ class DecoderSession {
     try {
       const FORMAT_F32 = this.module.SampleFormat.PlanarF32;
       const result = this.decoder.readChunk(this.req.chunkSize, FORMAT_F32);
-
-      if (result.status.status < 0) {
-        // EOF
-        if (result.status.status !== -541478725) {
-          throw new Error(`Decode error: ${result.status.error}`);
-        }
-      }
 
       if (result.samples.length > 0) {
         const chunkData = result.samples as Float32Array;
@@ -188,10 +185,15 @@ class DecoderSession {
       if (result.isEOF) {
         this.post({ type: "EOF", id: this.req.id });
         this.isRunning = false;
-      } else {
-        // 让出主线程，避免 UI 卡死
-        setTimeout(this.decodeLoop, 0);
+        return;
       }
+
+      if (result.status.status < 0 && result.status.status !== AVERROR_EOF) {
+        throw new Error(`Decode error: ${result.status.error}`);
+      }
+
+      // 让出主线程，避免 UI 卡死
+      setTimeout(this.decodeLoop, 0);
     } catch (e) {
       this.handleError(e);
     }

@@ -6,14 +6,11 @@ import { readFile } from "fs/promises";
  * @param filePath 文件路径
  * @returns 唯一ID
  */
-export const getFileID = (filePath: string): number => {
-  // SHA-256
-  const hash = createHash("sha256");
+export const getFileID = (filePath: string): string => {
+  // 与 Rust 扫描器保持一致
+  const hash = createHash("md5");
   hash.update(filePath);
-  const digest = hash.digest("hex");
-  // 将哈希值的前 16 位转换为十进制数字
-  const uniqueId = parseInt(digest.substring(0, 16), 16);
-  return Number(uniqueId.toString().padStart(16, "0"));
+  return hash.digest("hex");
 };
 
 /**

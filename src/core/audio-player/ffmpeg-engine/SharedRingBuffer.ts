@@ -1,5 +1,5 @@
 // 头部信息的索引位置 (Int32Array)
-const HEADER_SIZE = 16; // 4个 Int32 (16 bytes)
+const HEADER_SIZE = 20; // 5个 Int32，最后一个给 seek 唤醒标记
 const IDX_WRITE = 0; // 写指针
 const IDX_READ = 1; // 读指针
 const IDX_EOF = 2; // 结束标记
@@ -99,7 +99,8 @@ export class SharedRingBuffer {
     Atomics.store(this.header, IDX_WRITE, 0);
     Atomics.store(this.header, IDX_READ, 0);
     Atomics.store(this.header, IDX_EOF, 0);
-    Atomics.store(this.header, IDX_NOTIFY_COUNT, 0);
+    Atomics.add(this.header, IDX_NOTIFY_COUNT, 1);
+    Atomics.notify(this.header, IDX_NOTIFY_COUNT, 1);
   }
 
   /**
@@ -125,7 +126,7 @@ export class SharedRingBuffer {
           return totalRead;
         }
 
-        Atomics.wait(this.header, IDX_NOTIFY_COUNT, beforeNotifyState, 500);
+        Atomics.wait(this.header, IDX_NOTIFY_COUNT, beforeNotifyState, 100);
         continue;
       }
 

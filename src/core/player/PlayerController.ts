@@ -15,6 +15,7 @@ import type { LyricLine } from "@applemusic-like-lyrics/lyric";
 import { type DebouncedFunc, throttle } from "lodash-es";
 import { useBlobURLManager } from "../resource/BlobURLManager";
 import { useAudioManager } from "./AudioManager";
+import { shouldFetchLocalMetadata } from "./localPlaybackInfo";
 import { useLyricManager } from "./LyricManager";
 import { mediaSessionManager } from "./MediaSessionManager";
 import * as playerIpc from "./PlayerIpc";
@@ -342,10 +343,6 @@ class PlayerController {
     const audioManager = useAudioManager();
     // 设置基础参数
     audioManager.setVolume(statusStore.playVolume);
-    // 仅当引擎支持倍速时设置
-    if (audioManager.capabilities.supportsRate) {
-      audioManager.setRate(statusStore.playRate);
-    }
     // 应用 ReplayGain
     this.applyReplayGain();
     // 切换输出设备（非 MPV 引擎且未开启频谱时）
@@ -370,6 +367,10 @@ class PlayerController {
         autoPlay,
         seek: seek / 1000,
       });
+      // 加载完成后应用倍速，避免 FFmpeg Worker 未初始化时丢失设置
+      if (audioManager.capabilities.supportsRate) {
+        audioManager.setRate(statusStore.playRate);
+      }
 
       // 更新进度到状态
       const duration = updateSeekState();
@@ -411,7 +412,7 @@ class PlayerController {
     }
     // 本地文件额外处理
     else {
-      await this.parseLocalMusicInfo(song.path);
+      await this.parseLocalMusicInfo(song);
     }
 
     // 预载下一首
@@ -429,8 +430,10 @@ class PlayerController {
    * 解析本地歌曲元信息
    * @param path 歌曲路径
    */
-  private async parseLocalMusicInfo(path: string) {
+  private async parseLocalMusicInfo(song: SongType) {
     try {
+      const path = song.path;
+      if (!path) return;
       const musicStore = useMusicStore();
       if (musicStore.playSong.type === "streaming") return;
       const statusStore = useStatusStore();
@@ -451,9 +454,13 @@ class PlayerController {
           musicStore.playSong.cover = "/images/song.jpg?asset";
         }
       }
-      // 获取元数据
-      const infoData = await window.electron.ipcRenderer.invoke("get-music-metadata", path);
-      statusStore.songQuality = handleSongQuality(infoData.format?.bitrate ?? 0, "local");
+      // 缺少扫描音质时才回退解析元数据
+      if (shouldFetchLocalMetadata(song)) {
+        const infoData = await window.electron.ipcRenderer.invoke("get-music-metadata", path);
+        statusStore.songQuality = handleSongQuality(infoData.format?.bitrate ?? 0, "local");
+      } else {
+        statusStore.songQuality = song.quality;
+      }
       // 获取主色
       getCoverColor(musicStore.playSong.cover);
       // 更新媒体会话

@@ -11,7 +11,9 @@ import FFmpegWorker from "./ffmpeg.worker?worker";
 import {
   clampPlaybackTime,
   resolveFfmpegChunkTiming,
+  shouldAcceptFfmpegChunk,
   shouldDispatchFfmpegEnded,
+  shouldResumeFfmpegWorker,
 } from "./playbackState";
 import { SharedRingBuffer } from "./SharedRingBuffer";
 import type { AudioMetadata, PlayerState, WorkerRequest, WorkerResponse } from "./types";
@@ -22,7 +24,9 @@ const HIGH_WATER_MARK = 30;
 const LOW_WATER_MARK = 10;
 const IDX_SEEK_GEN = 4;
 const FFMPEG_INIT_TIMEOUT = 30000;
+const FFMPEG_SEEK_TIMEOUT = 30000;
 const LOCAL_FILE_READ_CHUNK_SIZE = 512 * 1024;
+const SEEK_SUPERSEDED_ERROR = "Superseded by new seek";
 
 /**
  * 基于 FFmpeg WASM 的音频播放器实现
@@ -35,6 +39,8 @@ export class FFmpegAudioPlayer extends BaseAudioPlayer {
   private worker: Worker | null = null;
   /** 音频元数据 */
   private metadata: AudioMetadata | null = null;
+  /** 当前元数据封面 Blob URL */
+  private metadataCoverUrl: string | null = null;
 
   /** 当前播放器状态 */
   private playerState: PlayerState = "idle";
@@ -48,6 +54,8 @@ export class FFmpegAudioPlayer extends BaseAudioPlayer {
   private sourceGeneration = 0;
   /** 解码是否已完成 */
   private isDecodingFinished = false;
+  /** ended 事件是否已经派发 */
+  private endedDispatched = false;
   /** 当前播放速率 */
   private currentTempo = 1.0;
 
@@ -94,6 +102,7 @@ export class FFmpegAudioPlayer extends BaseAudioPlayer {
       resolve: (value?: unknown) => void;
       reject: (reason?: Error) => void;
       timer: number;
+      type: WorkerRequest["type"];
     }
   >();
 
@@ -181,6 +190,7 @@ export class FFmpegAudioPlayer extends BaseAudioPlayer {
         resolve: resolve as (value?: unknown) => void,
         reject: reject as (reason?: Error) => void,
         timer,
+        type: msg.type,
       });
 
       this.worker?.postMessage(requestPayload, transfer);
@@ -188,7 +198,7 @@ export class FFmpegAudioPlayer extends BaseAudioPlayer {
   }
 
   public async load(url: string | File) {
-    this.reset();
+    await this.reset();
     this.dispatch("loadstart");
 
     this.init();
@@ -289,7 +299,8 @@ export class FFmpegAudioPlayer extends BaseAudioPlayer {
     }
     const contentLength = response.headers.get("Content-Length");
     if (!contentLength) {
-      throw new Error("Content-Length header is missing");
+      await this.loadFullDownload(url);
+      return;
     }
 
     const fileSize = parseInt(contentLength, 10);
@@ -309,6 +320,34 @@ export class FFmpegAudioPlayer extends BaseAudioPlayer {
 
     this.runFetchLoop(url, 0, this.fileSize);
     await initWorkerPromise;
+    this.isWorkerPaused = true;
+  }
+
+  private async loadFullDownload(url: string) {
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new Error(`Download failed: ${response.statusText}`);
+    }
+
+    const blob = await response.blob();
+    const name = this.getDownloadFileName(url);
+    const file = new File([blob], name || "stream.audio");
+
+    this.currentUrl = url;
+    this.setupWorkerListeners();
+    this.isStreaming = false;
+    this.streamSource = null;
+
+    await this.requestWorker(
+      {
+        type: "INIT",
+        file,
+        chunkSize: 4096 * 8,
+        paused: true,
+      },
+      [],
+      FFMPEG_INIT_TIMEOUT,
+    );
     this.isWorkerPaused = true;
   }
 
@@ -376,7 +415,10 @@ export class FFmpegAudioPlayer extends BaseAudioPlayer {
         return;
       } else {
         console.error("[Player] Stream error:", err);
-        this.dispatch("error", { originalEvent: new Event("error"), errorCode: 2 });
+        this.dispatch("error", {
+          originalEvent: new Event("error"),
+          errorCode: AudioErrorCode.NETWORK,
+        });
       }
     }
   }
@@ -436,7 +478,6 @@ export class FFmpegAudioPlayer extends BaseAudioPlayer {
       const err = toError(e);
       console.error("[Player] Local file stream error:", err);
       this.ringBuffer?.setEOF();
-      this.notifyWorkerSeek();
       this.dispatch("error", {
         originalEvent: new Event("error"),
         errorCode: AudioErrorCode.NETWORK,
@@ -445,14 +486,35 @@ export class FFmpegAudioPlayer extends BaseAudioPlayer {
   }
 
   protected async doPlay(): Promise<void> {
+    const previousState = this.playerState;
     this.dispatch("play");
-    if (this.worker && this.isWorkerPaused) {
-      this.isWorkerPaused = false;
-      await this.requestWorker({ type: "RESUME" }).catch((e) => {
-        this.isWorkerPaused = true;
-        throw e;
-      });
+
+    if (this.audioCtx?.state === "suspended") {
+      await this.audioCtx.resume();
     }
+
+    if (this.audioCtx) {
+      const now = this.audioCtx.currentTime;
+      if (this.nextStartTime < now) {
+        this.nextStartTime = now;
+        this.shouldAnchorNextChunk = true;
+      }
+    }
+
+    this.playerState = "playing";
+    try {
+      if (this.worker && this.isWorkerPaused) {
+        this.isWorkerPaused = false;
+        await this.requestWorker({ type: "RESUME" }).catch((e) => {
+          this.isWorkerPaused = true;
+          throw e;
+        });
+      }
+    } catch (e) {
+      this.playerState = previousState;
+      throw e;
+    }
+
     this.dispatch("playing");
     this.startTimeUpdate();
   }
@@ -460,6 +522,12 @@ export class FFmpegAudioPlayer extends BaseAudioPlayer {
   protected async doPause(): Promise<void> {
     this.dispatch("pause");
     this.stopTimeUpdate();
+
+    if (this.audioCtx) {
+      const frozenTime = this.currentTime;
+      this.syncTimeAnchor(this.audioCtx.currentTime, frozenTime);
+    }
+
     if (this.worker) {
       this.isWorkerPaused = true;
       await this.requestWorker({ type: "PAUSE" }).catch(() => {
@@ -473,6 +541,7 @@ export class FFmpegAudioPlayer extends BaseAudioPlayer {
     this.stopActiveSources();
     this.isDecodingFinished = false;
     this.isPendingSeek = false;
+    this.endedDispatched = false;
     if (this.audioCtx) {
       const now = this.audioCtx.currentTime;
       this.nextStartTime = now;
@@ -480,23 +549,50 @@ export class FFmpegAudioPlayer extends BaseAudioPlayer {
       this.shouldAnchorNextChunk = true;
       this.syncTimeAnchor(now, 0);
     }
-    Promise.resolve(this.doPause()).catch(() => {});
+    this.isWorkerPaused = true;
+    if (this.worker) {
+      void this.requestWorker({ type: "PAUSE" }).catch((e) => {
+        if (toError(e).message === "Player reset") return;
+        console.warn("[FFmpegAudioPlayer] stop pause worker failed:", e);
+      });
+    }
+    this.dispatch("pause");
+  }
+
+  private cancelPendingSeekRequests(reason = SEEK_SUPERSEDED_ERROR) {
+    for (const [id, req] of this.pendingRequests) {
+      if (req.type !== "SEEK") continue;
+      clearTimeout(req.timer);
+      req.reject(new Error(reason));
+      this.pendingRequests.delete(id);
+    }
   }
 
   protected async doSeek(time: number): Promise<void> {
     if (!this.worker) return;
+    this.cancelPendingSeekRequests();
     this.dispatch("seeking");
     this.stopActiveSources();
     this.activeSources = [];
     this.isDecodingFinished = false;
     this.isPendingSeek = true;
+    this.endedDispatched = false;
     const shouldPauseAfterSeek = this.playerState !== "playing";
 
-    await this.requestWorker({
-      type: "SEEK",
-      seekTime: time,
-      paused: shouldPauseAfterSeek,
-    });
+    try {
+      await this.requestWorker(
+        {
+          type: "SEEK",
+          seekTime: time,
+          paused: shouldPauseAfterSeek,
+        },
+        [],
+        FFMPEG_SEEK_TIMEOUT,
+      );
+    } catch (e) {
+      if (toError(e).message === SEEK_SUPERSEDED_ERROR) return;
+      throw e;
+    }
 
     this.dispatch("timeupdate");
   }
@@ -520,10 +616,12 @@ export class FFmpegAudioPlayer extends BaseAudioPlayer {
 
   public async setTempo(tempo: number) {
     if (!this.worker) return;
+    if (tempo === this.currentTempo) return;
     const trueTime = this.currentTime;
     await this.requestWorker({ type: "SET_TEMPO", value: tempo });
     this.currentTempo = tempo;
-    await this.seek(trueTime, true);
+    await this.doSeek(trueTime);
+    this.applyFadeTo(this.volume * this.replayGain, 0);
   }
 
   protected async doSetSinkId(_deviceId: string): Promise<void> {
@@ -536,10 +634,12 @@ export class FFmpegAudioPlayer extends BaseAudioPlayer {
     this.worker.onmessage = (event: MessageEvent<WorkerResponse>) => {
       const resp = event.data;
       const msgId = resp.id;
+      let matchedRequestType: WorkerRequest["type"] | null = null;
 
       if (this.pendingRequests.has(msgId)) {
         // biome-ignore lint/style/noNonNullAssertion: 肯定有
         const req = this.pendingRequests.get(msgId)!;
+        matchedRequestType = req.type;
 
         if (resp.type === "ERROR") {
           clearTimeout(req.timer);
@@ -582,16 +682,23 @@ export class FFmpegAudioPlayer extends BaseAudioPlayer {
 
       switch (resp.type) {
         case "ERROR":
-          this.dispatch("error", { originalEvent: new Event("error"), errorCode: 3 });
+          console.error("[FFmpegAudioPlayer] Worker error:", resp.error);
+          this.dispatch("error", {
+            originalEvent: new Event("error"),
+            errorCode: AudioErrorCode.DECODE,
+          });
           break;
         case "METADATA":
+          this.endedDispatched = false;
+          this.revokeMetadataCoverUrl();
+          this.metadataCoverUrl = this.createMetadataCoverUrl(resp.coverData);
           this.metadata = {
             sampleRate: resp.sampleRate,
             channels: resp.channels,
             duration: resp.duration,
             metadata: resp.metadata,
             encoding: resp.encoding,
-            coverUrl: resp.coverUrl,
+            coverUrl: this.metadataCoverUrl ?? undefined,
             bitsPerSample: resp.bitsPerSample,
           };
           if (this.audioCtx) {
@@ -604,19 +711,15 @@ export class FFmpegAudioPlayer extends BaseAudioPlayer {
           this.dispatch("canplay");
           break;
         case "CHUNK":
-          if (this.isPendingSeek) {
-            // console.warn("丢弃了一块过时音频");
-            return;
-          }
           if (this.metadata) {
-            this.scheduleChunk(
+            const didSchedule = this.scheduleChunk(
               resp.data,
               this.metadata.sampleRate,
               this.metadata.channels,
               resp.startTime,
             );
 
-            if (this.audioCtx) {
+            if (didSchedule && this.audioCtx) {
               const bufferedDuration = this.nextStartTime - this.audioCtx.currentTime;
               if (bufferedDuration > HIGH_WATER_MARK && !this.isWorkerPaused) {
                 this.isWorkerPaused = true;
@@ -635,6 +738,7 @@ export class FFmpegAudioPlayer extends BaseAudioPlayer {
           this.checkIfEnded();
           break;
         case "SEEK_DONE":
+          if (matchedRequestType !== "SEEK") return;
           this.isPendingSeek = false;
           if (this.audioCtx) {
             const now = this.audioCtx.currentTime;
@@ -662,9 +766,18 @@ export class FFmpegAudioPlayer extends BaseAudioPlayer {
     sampleRate: number,
     channels: number,
     chunkStartTime: number,
-  ) {
-    if (!this.audioCtx || !this.inputNode) return;
+  ): boolean {
+    if (!this.audioCtx || !this.inputNode) return false;
     const ctx = this.audioCtx;
+    if (
+      !shouldAcceptFfmpegChunk({
+        isPendingSeek: this.isPendingSeek,
+        audioContextState: ctx.state,
+        playerState: this.playerState,
+      })
+    ) {
+      return false;
+    }
 
     const safeChannels = channels || 1;
     const frameCount = planarData.length / safeChannels;
@@ -711,6 +824,7 @@ export class FFmpegAudioPlayer extends BaseAudioPlayer {
     const generation = this.sourceGeneration;
 
     source.onended = () => {
+      this.disconnectSource(source);
       if (generation !== this.sourceGeneration) return;
 
       const index = this.activeSources.indexOf(source);
@@ -720,7 +834,13 @@ export class FFmpegAudioPlayer extends BaseAudioPlayer {
 
       if (this.audioCtx && !this.isDecodingFinished) {
         const bufferedDuration = this.nextStartTime - this.audioCtx.currentTime;
-        if (bufferedDuration < LOW_WATER_MARK && this.isWorkerPaused) {
+        if (
+          bufferedDuration < LOW_WATER_MARK &&
+          shouldResumeFfmpegWorker({
+            playerState: this.playerState,
+            isWorkerPaused: this.isWorkerPaused,
+          })
+        ) {
           this.isWorkerPaused = false;
           this.requestWorker({ type: "RESUME" }).catch((err) => {
             console.error("[Player] Failed to resume worker for low water mark:", err);
@@ -739,6 +859,8 @@ export class FFmpegAudioPlayer extends BaseAudioPlayer {
 
       this.checkIfEnded();
     };
+
+    return true;
   }
 
   private checkIfEnded() {
@@ -748,15 +870,25 @@ export class FFmpegAudioPlayer extends BaseAudioPlayer {
       isDecodingFinished: this.isDecodingFinished,
       currentTime: this.currentTime,
       duration: this.duration,
+      endedDispatched: this.endedDispatched,
     });
 
     if (!shouldEnd) return;
+    this.endedDispatched = true;
     this.dispatch("ended");
   }
 
   private syncTimeAnchor(wallTime: number, sourceTime: number) {
     this.anchorWallTime = wallTime;
     this.anchorSourceTime = sourceTime;
+  }
+
+  private disconnectSource(source: AudioBufferSourceNode) {
+    try {
+      source.disconnect();
+    } catch {
+      // ignore
+    }
   }
 
   private stopActiveSources() {
@@ -769,6 +901,7 @@ export class FFmpegAudioPlayer extends BaseAudioPlayer {
       } catch {
         // ignore
       }
+      this.disconnectSource(source);
     });
   }
 
@@ -823,9 +956,11 @@ export class FFmpegAudioPlayer extends BaseAudioPlayer {
     return super.dispatch(type, ...args);
   }
 
-  private reset() {
+  private async reset() {
     this.stopTimeUpdate();
-    this.audioCtx?.suspend();
+    if (this.audioCtx?.state === "running") {
+      await this.audioCtx.suspend().catch(() => undefined);
+    }
     this.stopActiveSources();
     this.activeSources = [];
 
@@ -836,8 +971,10 @@ export class FFmpegAudioPlayer extends BaseAudioPlayer {
     this.pendingRequests.clear();
 
     this.metadata = null;
+    this.revokeMetadataCoverUrl();
     this.isWorkerPaused = false;
     this.isDecodingFinished = false;
+    this.endedDispatched = false;
     this.nextStartTime = this.audioCtx ? this.audioCtx.currentTime : 0;
     this.sourceTimeCursor = 0;
     this.shouldAnchorNextChunk = true;
@@ -855,8 +992,30 @@ export class FFmpegAudioPlayer extends BaseAudioPlayer {
     this.dispatch("emptied");
   }
 
+  private revokeMetadataCoverUrl() {
+    if (!this.metadataCoverUrl) return;
+    URL.revokeObjectURL(this.metadataCoverUrl);
+    this.metadataCoverUrl = null;
+  }
+
+  private createMetadataCoverUrl(coverData?: Uint8Array): string | null {
+    if (!coverData) return null;
+    const coverBytes = new Uint8Array(coverData.byteLength);
+    coverBytes.set(coverData);
+    return URL.createObjectURL(new Blob([coverBytes.buffer]));
+  }
+
+  private getDownloadFileName(url: string): string {
+    const rawName = url.split("/").pop()?.split("?")[0] || "stream.audio";
+    try {
+      return decodeURIComponent(rawName) || "stream.audio";
+    } catch {
+      return rawName || "stream.audio";
+    }
+  }
+
   public override destroy() {
-    this.reset();
+    void this.reset();
     if (this.worker) {
       this.worker.terminate();
       this.worker = null;
