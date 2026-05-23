@@ -19,7 +19,12 @@ const getLocalId = (item: LocalSongInput): number | string => {
 
 const getPathName = (path: unknown): string => {
   if (typeof path !== "string") return "";
-  return path.split(/[\\/]/).pop()?.replace(/\.[^.]+$/, "") || "";
+  return (
+    path
+      .split(/[\\/]/)
+      .pop()
+      ?.replace(/\.[^.]+$/, "") || ""
+  );
 };
 
 const getText = (...values: unknown[]): string => {

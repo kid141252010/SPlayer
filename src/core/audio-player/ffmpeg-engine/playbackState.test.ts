@@ -7,8 +7,14 @@ import {
 } from "./playbackState";
 
 test("暂停或挂起时不接收新的 FFmpeg chunk 排程", () => {
-  assert.equal(shouldAcceptFfmpegChunk({ isPendingSeek: false, audioContextState: "running" }), true);
-  assert.equal(shouldAcceptFfmpegChunk({ isPendingSeek: true, audioContextState: "running" }), false);
+  assert.equal(
+    shouldAcceptFfmpegChunk({ isPendingSeek: false, audioContextState: "running" }),
+    true,
+  );
+  assert.equal(
+    shouldAcceptFfmpegChunk({ isPendingSeek: true, audioContextState: "running" }),
+    false,
+  );
   assert.equal(
     shouldAcceptFfmpegChunk({
       isPendingSeek: false,

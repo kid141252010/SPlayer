@@ -509,7 +509,7 @@ class PlayerController {
           ttmlOffsetRefreshPending = true;
           lyricManager
             .handleLyric(playSongData)
-            .catch(() => { })
+            .catch(() => {})
             .finally(() => {
               ttmlOffsetRefreshPending = false;
             });
