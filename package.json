@@ -39,7 +39,7 @@
     "docs:preview": "vitepress preview docs"
   },
   "dependencies": {
-    "@applemusic-like-lyrics/core": "0.5.1",
+    "@applemusic-like-lyrics/core": "file:.vendor/applemusic-like-lyrics-core-0.5.1.tgz",
     "@applemusic-like-lyrics/lyric": "1.0.1",
     "@electron-toolkit/preload": "^3.0.2",
     "@electron-toolkit/utils": "^4.0.0",
